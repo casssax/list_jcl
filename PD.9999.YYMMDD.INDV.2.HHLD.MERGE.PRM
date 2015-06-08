@@ -1,0 +1,1832 @@
+REPLACE %PATH% \\LIST-GROUP12008\PRODUCTION
+REPLACE %JOBNUM% 150602
+REPLACE %CLNAME% UPMC
+REPLACE %FOLDER% %JOBNUM%_%CLNAME%_JCS
+REPLACE %TEMP% \\LIST-GROUP12008\TEMPDATA\PRODUCTION
+* ***************************************************
+
+DIRCREATE %PATH%\%FOLDER%\OUTPUT
+DIRCREATE %PATH%\%FOLDER%\REPORTS
+DIRCREATE %TEMP%\%FOLDER%\OUTPUT
+DIRCREATE %TEMP%\%FOLDER%\REPORTS
+
+* ***************************************************************************
+* * THIS PARM IS FOR THE REGULAR UPDATE UPMC PROCESSING
+* * REMEMBER TO:
+* * CHECK FIELDS/LAYOUT OF OUTPUT OF NCOA PROCESS
+* * PULL NEW PROSPECTS AND NEW AXCIOM MATCH FILE.
+* * CHANGE DATE IN MEMMATCH STEP. 
+* * CHECK FOR NEW DMA FILE AND CHANGE PARMS IF NECESSARY.                 
+* * CHANGE DATE IN CROSS_REF_DEDUPE TO PREVIOUS UPDATE. 
+
+
+* * UPMCINMP - INDV M/P
+* * ----PULL PROSPECT RECORDS FROM PREVIOUS INDV MERGE MAIL FILE
+* * ----SORTINPUTS - SORT PROSPECT RECORDS WITH MEMBER FOR INPUT TO INDV M/P
+* * UPMCHHMP - HOUSEHOLD M/P
+* * UPMCHHS1 - SORT HHLD DUPE AND CLEAN FILES
+* * UPMCGEOC - MATCH TO APPLY GEOCODE INFO
+* * UPMCMMTC - MATCH BACK FULL MEMBER EXPORT FILE TO APPEND UPMC FIELDS
+* ***************************************************************************
+
+
+
+***************************************************************
+* * pull prospect records from previous UPMCINDV file
+* * check quantity from spreadsheet:
+* * should match previous input to HHLD merge
+**************************************************************
+
+LABEL PROSPECT_SELECT
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L01200 12000                                                    
+FILEDF GSPOUT1  L00450 04500                                                      
+FILEDF GSPOUT2  L00450 04500                                                      
+JOBBGN 
+BLANKS 01                     BZ
+BLANKS 02                     EQ  N001 05-                     AND
+BLANKS 02                     EQ  N031 05-                    
+
+SQNUM  01                     X 
+SQNUM  02                     EQ  N398 01-M                    AND
+SQNUM  02                     MV  N398 01-N
+
+SQNU2  01                     AZ
+SQNU2  02                     EQ  N332 01-PROSPECT
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\%JOBNUM%.PROSP.IPCASS.REPORT.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\REPORTS\%JOBNUM%.PROSP.IPCASS.XLG
+FILE DD_GSPINA %PATH%\150502_UPMC_JCS\OUTPUT\PD.0540S.UPMCINDV.TXT
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.INPUT2.TXT
+FILE DD_GSPOUT2 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.BLANK.PROSPECTS.TXT
+
+
+LABEL COUNT_PROSPECT
+STEP GENCOUNT #27078 UPMC : COUNT FILE(S) INPUT TO INDV MERGE/PURGE
+FILE USRIN01 *
+HEADER            #27078 UPMC : INPUT TO INDV MERGE/PURGE COUNT
+CONTRL 0450
+UNIT01 0398 01 C STATUS 
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.INPUT2.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.PROSPECT.INPUT.COUNT.STATUS.TXT
+
+
+* ***************************************************************************
+* * drop prospect record if LSC_ID matches a Member LSC_ID
+* * match against 'lsc_newmember_extract_yymmdd.txt.indiv.output'
+* * from current update
+* ***************************************************************************
+
+LABEL PROSPECT_ID_DROP
+
+STEP SORT PROSPECT_BY_ID
+FILE USRIN01 *
+SORT   0352  12 A  Zip
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.INPUT2.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.PROSPECT.INPUT2.SORT.ID.TXT
+
+LABEL SORT_INDV_EXTRACT
+STEP SORT PROSPECT_BY_ID
+FILE USRIN01 *
+SORT   0001  12 A  Zip
+/*
+FILE USRIN02 %PATH%\%FOLDER%\lsc_newmember_extract_150603.txt.indiv.output
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.MEMBER.INPUT2.SORT.IM.TXT
+
+LABEL BLANK_DROP_MATCH
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00650 06500                                                    
+FILEDF GSPMAT1  L00650 06500                                                    
+FILEDF GSPOUT1  L00650 06500                                                    
+FILEDF GSPOUT2  L00650 06500                                                    
+JOBBGN                                                                          
+* *
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    
+
+NOMATC 01                     BZ
+* *
+* *
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 352 12       
+MATCHM 001 12       
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\OUTPUT\PD.0365.ID.MATCH.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.PROSPECT.INPUT2.SORT.ID.TXT
+FILE DD_GSPMAT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.MEMBER.INPUT2.SORT.IM.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.ID.MATCH.OUTPUT.TXT
+FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.ID.MATCH.BALANCE.TXT
+
+* ***************************************************************************
+* * sort for input to INDV merge
+* * count input to INDV merge
+* * run INDV merge
+* ***************************************************************************
+
+
+LABEL SORT_INPUT_INDV_MERGE
+* * SORT MEMBER AND PROSPECTS TOGETHER
+STEP SORT #%JOBNUM% UPMC : SORT FILE(S) FOR MERGE/PURGE
+FILE USRIN01 *
+SORT   224  05  A  ZIPCODE
+SORT   001  04  A  LASTNAME
+SORT   072  05  A  ADDRESS     
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DECEASED.OUTPUT.txt
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\PD.0365.ID.MATCH.BALANCE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.SORTED.INPUT.MERGE.PURGE.TXT
+
+
+LABEL COUNT_INPUT_INDV_MERGE
+STEP GENCOUNT #%JOBNUM% UPMC : COUNT FILE(S) INPUT TO INDV MERGE/PURGE
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC : INPUT TO INDV MERGE/PURGE COUNT
+CONTRL 0850
+UNIT01 0332 09 C KEYCODE
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.SORTED.INPUT.MERGE.PURGE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.INPUT.MERGE.PURGE.COUNTS.RPT
+
+
+LABEL MERGE_INDV
+* ***************************************************************************
+* * CMPLIM card says only records with different filecodes are compared.
+* * the PROSPECT filecode can not be a driver record.
+* * the POST01 card says that any record that hits the DMA will have a 'D' 
+* * put in pos. 324 
+* * the POST02 card moves prospect id to member record if future record only. 
+* ***************************************************************************
+
+PROC MPP30 #%JOBNUM% UPMC : MERGE/PURGE PROCESSING
+FILE DD_MPPCPPRM *
+* **********************
+CMPLIM NE 1 3 
+* **********************
+* **********************
+* * MIDDLE INITIAL COMPARE
+CMPFLD 051 01 NE U X
+* * SUFFIX COMPARE
+CMPFLD 062 05 NE U X
+* **********************
+ALGSEL INDV T
+ALGSEL ADDR M XY
+FLCODE C 332 9
+ZPCODE M 224 05
+ADDRDF L 132 60 072 60
+NAMEDF 052 10 031 20 051 01 001 30 062 10
+DUPCTL 347 348 349 351
+DUPREC     364 344 345
+CLNREC     364 344 345
+BRKLEN 6
+FILEDF MPPMAIL  L 0450
+FILEDF MPPDUPS  L 0450
+FILEDF MPPDSTAT L 0450
+FILEDF MPPSSTAT L 0450
+FILEDF MPPINA   L 0450
+FILEDF MPPINB   L 0450
+FLC001 MEMBER         MEMBER 
+FLC002 PROSPECT   X   PROSPECT
+FLC003 DMA0515    X   DMA0515              X
+POST01 R               324 01   1 3 DMA       332 09
+POST02 M               352 12   1 8 PROSPECT  352 12
+FLCOUT P X
+HEADER            #%JOBNUM% UPMC 
+UHD1A #%JOBNUM% UPMC INDV MEDIUM
+UHD1B -- MERGE/PURGE PROCESSING
+MERGES0224 050001 040072 05
+PRIORTP
+SEQERR E
+SUROPT N
+ULRECL 450 
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.CM30.REPORT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.CM30.REPORT.XLG
+FILE DD_MPPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.SORTED.INPUT.MERGE.PURGE.TXT
+FILE DD_MPPINB %PATH%\DMA_MAY_2015_MAIL\OUTPUTS\PD.0365S.DMA.450.MAY15.INDV.TXT
+FILE DD_MPPDUPS %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.DUPE.FILE.TXT
+FILE DD_MPPMAIL %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.FILE.TXT
+FILE DD_MPPDSTAT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.CM30.STAT.TXT
+FILE DD_MPPSSTAT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.STATE.STAT.TXT
+
+
+* ***************************************************************************
+* * INDV merge reports
+* ***************************************************************************
+
+LABEL AFTMP1
+STEP CM30REPT #%JOBNUM% UPMC : INDV CM30 STAT
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC : INDV CM30 STAT
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.CM30.STAT.TXT
+FILE USROUT01 %TEMP%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.CM30.STAT.TXT.XLS
+
+
+PROC MPP41 #%JOBNUM% UPMC : INDV DE41 REPORT
+FILE DD_MPPCPPRM *
+FILEDF MPPSSTAT L 0450
+HEADER            #%JOBNUM% UPMC : INDV DE41 REPORT
+UHD1A #%JOBNUM% UPMC
+UHD1B
+REPORT       F
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.DE41.REPORT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.DE41.REPORT.XLG
+FILE DD_MPPSSTAT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.STATE.STAT.TXT
+
+
+LABEL INDCOUNTS
+STEP GENCOUNT #%JOBNUM% UPMC : INDV MAIL FILE COUNT
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC : INDV MAIL FILE COUNT
+CONTRL 0450
+UNIT01 0332 09 C KEYCODE
+UNIT02 0332 09 C KEYCODE
+UNIT02 0324 01 C DMA
+UNIT03 0324 01 C DMA
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.FILE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.MAIL.FILE.COUNTS.TXT
+
+
+STEP GENCOUNT #%JOBNUM% UPMC : INDV DUPE FILE COUNT
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC : INDV DUPE FILE COUNT
+CONTRL 0450
+UNIT01 0332 09 C KEYCODE
+UNIT02 0332 09 C KEYCODE
+UNIT02 0324 01 C DMA
+UNIT03 0324 01 C DMA
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.DUPE.FILE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.DUPE.FILE.COUNTS.TXT
+
+
+PROC MPP60 #%JOBNUM% UPMC : GALLEY : MAIL FILE
+FILE DD_MPPCPPRM *
+FILEDF MPPINPR  L 0450
+FLCODE   132 9
+HEADER            UPMC INDV M/P CLEAN GALLEY
+UHD1A CLEAN FILE   UPMC INDV M/P CLEAN GALLEY
+UHD1B
+UHD2A LAST           FIRST     M SFX  ADDRESS                  CITY     
+UHD2B    ST ZIP   KEYCODE DUPGRP   M_M_I                                
+UHD3A ----           -----     - ---   -------                 ----     
+UHD3B    -- ---   ------- ------   -----                                
+RECLIM           000002500
+MOVE01 001 15 001
+MOVE02 016 10 031
+MOVE03 026 01 051
+MOVE04 028 05 062
+MOVE05 033 25 072
+MOVE07 058 13 192
+MOVE08 071 02 222
+MOVE09 073 05 224
+MOVE10 079 08 332
+MOVE11 087 08 364
+MOVE12 096 13 352
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.DE60.MAIL.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.DE60.MAIL.XLG
+FILE DD_MPPINPR %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.FILE.TXT
+
+* ***************************************************************************
+* * age filter process:
+* * UPMC rules say you can't be a dupe if the age is greater than 15 years difference
+* ***************************************************************************
+
+LABEL SORT_AGE_FILTER
+STEP SORT_LM
+FILE USRIN01 *
+SORT   364  08  A  DUPE NUMBER
+SORT   332  01  A  KEYCODE
+/*
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.DUPE.FILE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.SORT.INPUT.AGETEST.TXT
+FILE SSSTATS %PATH%\%FOLDER%\REPORTS\PD.0365.SORT.INPUT.AGETEST.RPT
+
+* ***************************************************************************
+* * age filter select:
+* * creates new dupe file with corrections for date of birth
+* * creates valid propect file
+* * -- prospect records that matched a member, but had age within 15 years.
+* * -- prospect record will be added back as a 'valid prospect'
+* * -- these prospect records were originally dropped to to matching a member
+* ***************************************************************************
+
+
+LABEL AGE_FILTER
+PROC GSP10 
+FILE DD_GSPAUX *
+HEADER            #99999 UPMC
+UHD1A #99999 UPMC FILTER DUPE PROCESS                           
+UHD1B CT
+/*
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00995 09950 
+FILEDF GSPOUT1  L00995 09950 
+FILEDF GSPOUT2  L09995 09950 
+JOBBGN   
+TESTIN 01                     X
+TESTIN 02                     MV  N400 10-                    
+
+SETUP2 01                     AZ                   DROP DMA RECORDS
+SETUP2 02                     EQ  N332 03-DMA                         
+* 
+SLCTX  01                     AZ                  PROCESS 1ST RECORD ONLY  
+SLCTX  02                     EQ  Y001 08-                     AND
+SLCTX  02                     MV  Y001 08 N364                 AND
+SLCTX  02                     MV  X001 08 N372 
+*      
+*  
+SLCTA  01                     AZ                  1ST REC OF DUPR GRP      
+SLCTA  02                     NE  N364 08 Y001                 AND
+SLCTA  02                     MV  Y001 08 N364                 AND
+SLCTA  02                     MV  X001 08 N372                 
+*                
+*
+SLCTB  01                     AZ                 WRITE OUT <15 YR                                            
+SLCTB  02                     EQ  N364 08 Y001                 AND
+SLCTB  02                     NE  N372 01-                     AND
+SLCTB  02                     NE  X001 01-                     AND
+SLCTB  02                     MV  W001 04 X001                 AND
+SLCTB  02                     SUE W001 44 N372                 AND
+SLCTB  02                     LE  W001 04-0015                 AND
+SLCTB  02                     MV  N451 04 W001
+               
+NODOB  01                     AZ
+NODOB  02                     EQ  N372 04-                  
+* 
+SKIP   01                     BZ                 WRITE VALID PROSPECTS
+SKIP   02                     EQ  N364 08 Y001                 AND
+SKIP   02                     MV  N451 04 W001
+*
+* 
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.SORT.INPUT.AGETEST.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.INDV.DUPE.FILE
+FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.VALID.PROSPECT.FILE
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.AGE.FILTER.DUPE.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\REPORTS\PD.0365.AGE.FILTER.DUPE.XLG
+
+
+LABEL COUNT_VALID_PROSPECTS
+STEP GENCOUNT_LM COUNTS FOR CODE
+FILE USRIN01 *
+HEADER            #%JOBNUM% VALID PROSPECT COUNTS
+CONTROL 0460
+UNIT01 0451 04 C  AGE DIFF                                                 
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.VALID.PROSPECT.FILE
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.VALID.PROSPECT.FILE.COUNTS.RPT
+
+LABEL COUNT_NEW_INDV_DUPE
+STEP GENCOUNT_LM COUNTS FOR CODE
+FILE USRIN01 *
+HEADER            #%JOBNUM% VALID NEW DUPE COUNTS
+CONTROL 0460
+UNIT01 0451 04 C  AGE DIFF                                                 
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.INDV.DUPE.FILE
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.NEW.INDV.DUPE.FILE.COUNTS.RPT
+
+
+* ***************************************************************************
+* * create crosswalk file of prospects dropped after matching member
+* * this is created from the 'new dupe file' created above, not the original.
+* * report from select used in spreadsheet:
+* * SLCTB  01                     BZ                 WRITE OUT <15 YR
+* * this number is put in the 
+* * 'Axciom Crosswalk hits (Prospect record dropped)' row
+* ***************************************************************************
+
+LABEL SORT_CROSSWALK_CURRENT
+STEP SORT_LM
+FILE USRIN01 *
+SORT   364  08  A  DUPE NUMBER
+SORT   332  01  A  KEYCODE
+/*
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.INDV.DUPE.FILE
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.SORT.INPUT.CROSSWALK1.TXT
+FILE SSSTATS %PATH%\%FOLDER%\REPORTS\PD.0365.SORT.INPUT.CROSSWALK1.RPT
+
+
+LABEL CROSSWALK_CURRENT
+PROC GSP10 
+FILE DD_GSPAUX *
+HEADER            #99999 UPMC
+UHD1A #99999 UPMC FILTER DUPE PROCESS                           
+UHD1B CT
+/*
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00995 09950 
+FILEDF GSPOUT1  L00995 09950 
+FILEDF GSPOUT2  L00050 00500
+JOBBGN   
+
+SETUP2 01                     AZ                   DROP DMA RECORDS
+SETUP2 02                     EQ  N332 03-DMA                  OR
+SETUP2 02                     EQ  N352 12-                     
+* 
+SLCTX  01                     AZ                  PROCESS 1ST RECORD ONLY  
+SLCTX  02                     EQ  Y001 08-                     AND
+SLCTX  02                     MV  Y001 08 N364                 AND
+SLCTX  02                     MV  X001 12 N352 
+*      
+*  
+SLCTA  01                     AZ                  1ST REC OF DUPR GRP      
+SLCTA  02                     NE  N364 08 Y001                 AND
+SLCTA  02                     MV  Y001 08 N364                 AND
+SLCTA  02                     MV  X001 12 N352                 
+*                
+*
+SLCTB  01                     BZ                 WRITE OUT <15 YR                                            
+SLCTB  02                     EQ  N364 08 Y001                 AND
+SLCTB  02                     NE  N352 12 X001                 AND
+SLCTB  02                     MV  N001 50 W001                 AND
+SLCTB  02                     MV  N001 12 X001                 AND
+SLCTB  02                     MV  N013 01-|                    AND
+SLCTB  02                     MV  N014 12 N352                 AND
+SLCTB  02                     MV  N026 01-|                    AND
+SLCTB  02                     MV  N027 06-ACXIOM
+               
+*
+OUTOUT 01                     AZ
+* 
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.SORT.INPUT.CROSSWALK1.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.CROSSWALK1.BAL.FILE
+FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.CROSSWALK1.FILE
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.NEW.CROSSWALK1.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\REPORTS\PD.0365.NEW.CROSSWALK1.XLG
+
+
+
+LABEL MATCH_PROSPECTS_FUTURES
+* ********************************************************************************
+* * This match removes the LSC_ID# from 'Future' MEMBER records who matched to a 
+* * 'VALID PROSPECT' record (date of birth > 15 years).
+* ********************************************************************************
+
+STEP SORT_LM
+FILE USRIN01 *
+SORT   352  12  A  LSC ID#     
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.VALID.PROSPECT.FILE
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.VALID.PROSPECT.IM.FILE
+FILE SSSTATS %PATH%\%FOLDER%\REPORTS\PD.0365.VALID.PROSPECT.IM.RPT
+
+STEP SORT_LM
+FILE USRIN01 *
+SORT   352  12  A  LSC ID#     
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.FILE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.FILE.IA.TXT
+FILE SSSTATS %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.MAIL.FILE.IA.RPT
+
+LABEL PROSPECT_FUTURE_MATCH
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPMAT1  L00600 06000                                                    
+FILEDF GSPOUT1  L00600 06000                                                    
+* *FILEDF GSPOUT2  L00600 06000                                                    
+JOBBGN                                                                          
+ 
+MATCHS 01                     X 
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N352 12 N386                    
+
+* *MATCH2 01                     AZ
+* *MATCH2 02                     EQ  M000 01-1                    AND
+* *MATCH2 02                     MV  N352 12 N386                    
+ 
+NMATCH 01                     AZ
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 352 12       
+MATCHM 352 12       
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.PROSPECT.FUTURE.MATCH.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.FILE.IA.TXT
+FILE DD_GSPMAT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.VALID.PROSPECT.IM.FILE
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.FUTURE.MATCH.OUTPUT.TXT
+* *FILE DD_GSPOUT2 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.FUTURE.MATCH.OUTPUT.TEST.TXT
+
+
+
+LABEL COUNT_VP
+STEP GENCOUNT #140122 UPMC : COUNT FILE(S) INPUT TO MERGE/PURGE
+FILE USRIN01 *
+HEADER            #140122 UPMC
+CONTRL 0450
+UNIT01 0352 01 C SEQNUM 
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.FUTURE.MATCH.OUTPUT.TXT
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.FUTURE.MATCH.OUTPUT.COUNTS.TXT
+
+* ***************************************************************************
+* * HHLD merge perge process:
+* * 
+* ***************************************************************************
+
+
+LABEL SORT_INPUT_HHLD_MERGE
+STEP SORT #%JOBNUM% UPMC : SORT FILE(S) FOR MERGE/PURGE
+FILE USRIN01 *
+SORT   224  05  A  ZIPCODE
+SORT   001  04  A  LASTNAME
+SORT   072  05  A  ADDRESS
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.FUTURE.MATCH.OUTPUT.TXT
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\PD.0365.VALID.PROSPECT.FILE
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.SORTED.INPUT.MERGE.PURGE.TXT
+
+
+LABEL HHLD_IP_MP_RECL
+STEP CHNG_LRECL 
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %PATH%\%FOLDER%\output\PD.0365.%JOBNUM%.HHLD.SORTED.INPUT.MERGE.PURGE.txt
+FILE USROUT01 %PATH%\%FOLDER%\output\PD.0365.%JOBNUM%.HHLD.SORTED.INPUT.MERGE.PURGE.RL.txt
+
+LABEL COUNT_INPUT_HHLD_MERGE
+STEP GENCOUNT #%JOBNUM% UPMC : COUNT FILE(S) INPUT TO MERGE/PURGE
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC
+CONTRL 0450
+UNIT01 0332 09 C KEYCODE
+UNIT02 0352 01 C LSC_ID
+/*
+FILE USRIN02 %PATH%\%FOLDER%\output\PD.0365.%JOBNUM%.HHLD.SORTED.INPUT.MERGE.PURGE.RL.txt
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.HHLD.INPUT.MERGE.PURGE.COUNTS.RPT
+
+* ************************************************************************
+* * HHLD MERGE STEP1: REGULAR HHLD MERGE ON ADDRESS/LAST NAME
+* *                   'N' IN POS 57 OF NAMEDF CARD
+* ************************************************************************
+
+LABEL MERGE_HHLD
+PROC MPP30 #%JOBNUM% UPMC : HHLD MERGE/PURGE PROCESSING
+FILE DD_MPPCPPRM *
+ALGSEL HHLD T
+ALGSEL ADDR T XY
+FLCODE C 332 9
+ZPCODE M 224 05
+ADDRDF L 132 60 072 60
+NAMEDF 052 10 031 20 051 01 001 30 062 10               N
+DUPCTL 347 348 349 351
+DUPREC     364 344 345
+CLNREC     364 344 345
+BRKLEN 6
+FILEDF MPPMAIL  L 0450
+FILEDF MPPDUPS  L 0450
+FILEDF MPPDSTAT L 0450
+FILEDF MPPSSTAT L 0450
+FILEDF MPPINA   L 0450
+FLC001 MEMBER         MEMBER 
+FLC001 PROSPECT       PROSPECT
+FLCOUT P X
+HEADER            #%JOBNUM% UPMC 
+UHD1A #%JOBNUM% UPMC HHLD TIGHT
+UHD1B -- MERGE/PURGE PROCESSING
+MERGES0224 050001 040072 05
+PRIORTP
+SEQERR E
+SUROPT E
+ULRECL 450
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.HHLD.CM30.REPORT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.HHLD.CM30.REPORT.XLG
+FILE DD_MPPINA %PATH%\%FOLDER%\output\PD.0365.%JOBNUM%.HHLD.SORTED.INPUT.MERGE.PURGE.RL.txt
+FILE DD_MPPDUPS %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.DUPE.FILE.TXT
+FILE DD_MPPMAIL %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.MAIL.FILE.TXT
+FILE DD_MPPDSTAT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.CM30.STAT.TXT
+FILE DD_MPPSSTAT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.STATE.STAT.TXT
+
+* *******************************************************************************
+* * STEP 2: CREATE MATCH IM FILE FROM DUPE FILE (SUB_ID) RECORDS ONLY
+* * writes out last name, hhld_id, address
+* * for records with a UPMC subscriber ID in pos. 253
+* *******************************************************************************
+LABEL HHLD_STEP2A
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L01200 12000                                                    
+FILEDF GSPOUT1  L01200 12000                                                    
+JOBBGN                                                                          
+WORK   01                     X
+WORK   02                     MV  W001450 N001                 AND
+WORK   02                     MV  N001450 Y001
+
+MATCHS 01                     AZ
+MATCHS 02                     NE  W253 09-                     AND
+MATCHS 02                     MV  N001 09 W253                 AND
+MATCHS 02                     MV  N011 08 W364                 AND
+MATCHS 02                     MV  N020 60 W072
+* *
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 352 12       
+ZIPIN  224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.CREATE_HHLD_MATCH_FILE.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.DUPE.FILE.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.SUBS.MATCH.FILE.TXT
+
+LABEL HHLD_STEP2B
+STEP SORTDUPELIM 
+FILE USRIN01 *
+SORT   001  09  A  SUB_ID 
+SORT   020  60  A  ADDRESS 
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.SUBS.MATCH.FILE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.MATCH.IM.TXT
+
+LABEL SORT_INPUT_HHLD_MERGE
+STEP SORT #%JOBNUM% UPMC : SORT FILE(S) FOR MERGE/PURGE
+FILE USRIN01 *
+SORT   253  09  A  SUB_ID 
+SORT   072  60  A  ADDRESS 
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.MAIL.FILE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.MATCH.IA.TXT
+
+* ***************************************************************************
+* * replace hhld_id on mailfile records with same subscriber_ID,last name, and address
+* ***************************************************************************
+
+LABEL HHLD_STEP2C
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00650 06500                                                    
+FILEDF GSPMAT1  L00650 06500                                                    
+FILEDF GSPOUT1  L00650 06500                                                    
+JOBBGN                                                                          
+* *
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N364 08 M011
+
+NONM   01                     AZ
+
+* *
+* *
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 253 09 072 60
+MATCHM 001 09 020 60
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.HHLD_MATCH.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.MATCH.IA.TXT
+FILE DD_GSPMAT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.MATCH.IM.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MATCH.OUTPUT.TXT
+
+* ***************************************************************************
+* * HHLD merge reports
+* ***************************************************************************
+
+
+STEP CM30REPT #%JOBNUM% UPMC : MERGE/PURGE EXCEL FORMAT REPORT
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC HHLD CM30 STAT
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.CM30.STAT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.HHLD.CM30.STAT.TXT.XLS
+
+
+PROC MPP41 #%JOBNUM% UPMC : MERGE/PURGE HHLDINDV
+FILE DD_MPPCPPRM *
+FILEDF MPPSSTAT L 0450
+HEADER            #%JOBNUM% UPMC HHLD DE41
+UHD1A #%JOBNUM% UPMC
+UHD1B
+REPORT       F
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.HHLD.DE41.REPORT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.DE41.REPORT.XLG
+FILE DD_MPPSSTAT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.STATE.STAT.TXT
+
+
+LABEL DUPEGAL1
+PROC MPP60 #%JOBNUM% UPMC : GALLEY : DUPE FILE
+FILE DD_MPPCPPRM *
+DUPCTL 347             0
+FILEDF MPPINPR  L 0450
+FLCODE   332 9
+HEADER            UPMC INDV M/P DUPE GALLEY
+UHD1A DUPLICATES FILE   UPMC INDV M/P DUPE GALLEY
+UHD1B
+UHD2A LAST           FIRST     M SFX  ADDRESS                  CITY     
+UHD2B    ST ZIP   KEYCODE DUPGRP   M_M_I                                
+UHD3A ----           -----     - ---   -------                 ----     
+UHD3B    -- ---   ------- ------   -----                                
+RECLIM           000002500
+MOVE01 001 15 001
+MOVE02 016 10 031
+MOVE03 026 01 051
+MOVE04 028 05 062
+MOVE05 033 25 072
+MOVE07 058 13 192
+MOVE08 071 02 222
+MOVE09 073 05 224
+MOVE10 079 08 332
+MOVE11 087 08 364
+MOVE12 096 13 352
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.DUPE.FILE.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.INDV.DUPE.FILE.XLG
+FILE DD_MPPINPR %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.INDV.DUPE.FILE.TXT
+FILE DD_MPPDPRT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DUPE.FILE.MEDIUM.TXT
+
+
+PROC MPP60 #%JOBNUM% UPMC : GALLEY : MAIL FILE
+FILE DD_MPPCPPRM *
+FILEDF MPPINPR  L 0450
+FLCODE   332 9
+HEADER            UPMC HHLD M/P CLEAN GALLEY
+UHD1A CLEAN FILE   UPMC HHLD M/P CLEAN GALLEY
+UHD1B
+UHD2A LAST           FIRST     M SFX  ADDRESS                  CITY     
+UHD2B    ST ZIP   KEYCODE DUPGRP   M_M_I                                
+UHD3A ----           -----     - ---   -------                 ----     
+UHD3B    -- ---   ------- ------   -----                                
+RECLIM           000002500
+MOVE01 001 15 001
+MOVE02 016 10 031
+MOVE03 026 01 051
+MOVE04 028 05 062
+MOVE05 033 25 072
+MOVE07 058 13 192
+MOVE08 071 02 222
+MOVE09 073 05 224
+MOVE10 079 08 332
+MOVE11 087 08 364
+MOVE12 096 13 352
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.DE60.MAIL.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.DE60.MAIL.XLG
+FILE DD_MPPINPR %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.MAIL.FILE.TXT
+
+
+* ********************************************************************
+* * sort dupe file with output of mail file match
+* * combines all records back together after match process
+* * (dupe and updated clean file)
+* ********************************************************************
+
+LABEL SORT_HHLD_DUPE_CLEAN
+STEP SORT #%JOBNUM% UPMC : SORT FILE(S) FOR MERGE/PURGE
+FILE USRIN01 *
+SORT   224  05  A  ZIPCODE
+SORT   001  04  A  LASTNAME
+SORT   072  05  A  ADDRESS
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MATCH.OUTPUT.TXT
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.DUPE.FILE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.SORTED.DUPE.CLEAN.MERGE.OUTPUT.TXT
+
+LABEL HHLD_DUPE_COUNTS
+STEP GENCOUNT_LM COUNTS FOR CODE
+FILE USRIN01 *
+HEADER            #%CLNAME%
+CONTROL 0450
+UNIT01 0364 08 C KEY        
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.SORTED.DUPE.CLEAN.MERGE.OUTPUT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.DUPE_GROUP.COUNTS.TXT
+
+
+* ***************************************************************************
+* * LAT/LONG append process:
+* * append lat/long by matching on zip9
+* * uses melissa data geodata files
+* ***************************************************************************
+
+LABEL SORT_LAT_LONG
+* * SORT ALL FILES FOR LAT / LONG MATCH
+STEP SORT 
+FILE USRIN01 *
+SORT   224  09  A  ZIPCODE
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.HHLD.SORTED.DUPE.CLEAN.MERGE.OUTPUT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.SORT.LATLONG.TXT
+
+
+* * MATCH TO GEOCODE FILE FOR LONG/LAT/FIPS
+LABEL MATCH_LAT_LONG
+PROC GSP10 
+FILE DD_GSPAUX *
+HEADER                                             
+UHD1A                                               
+UHD1B --                                             
+/*
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00450 00450                                                    
+FILEDF GSPMAT1  L00055 00055                                                    
+FILEDF GSPOUT1  L00450 00450                                                    
+JOBBGN  
+* 
+MATCH1 01                     X 
+MATCH1 02                     EQ  M000 01-1                    AND
+MATCH1 02                     MV  N303 21 M010                 AND
+MATCH1 02                     MV  N413 05 M041                    
+* 
+MATCH2 01                     X 
+MATCH2 02                     EQ  M000 01-0                    AND
+MATCH2 02                     EQ  N224 05 M001                 AND
+MATCH2 02                     EQ  N229 04-                     AND
+MATCH2 02                     EQ  M055 01-5                    AND
+MATCH2 02                     MV  N303 21 M010                 AND
+MATCH2 02                     MV  N413 05 M041                    
+* 
+MATCH3 01                     X 
+MATCH3 02                     EQ  M000 01-0                    AND
+MATCH3 02                     EQ  N224 05 M001                 AND
+MATCH3 02                     EQ  N229 04-                     AND
+MATCH3 02                     EQ  M055 01-7                    AND
+MATCH3 02                     MV  N303 21 M010                 AND
+MATCH3 02                     MV  N413 05 M041                    
+* 
+ALL    01                     AZ
+JOBEND                                                                          
+MATCHC 224 09
+MATCHM 001 09
+ZIPIN  224 C
+ZIPINM 001 C
+JOBCTL X W                                                                      
+SEQERR I                                                                         
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.LATLONG.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\REPORTS\MAKE.LATLONG.XLG
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.SORT.LATLONG.TXT
+FILE DD_GSPMAT1 %PATH%\MELISSA_DATA\GEO_DATA\STATES.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.OUTPUT.LATLONG.TXT
+
+LABEL SORT_FOR_COUNTY
+STEP SORT 
+FILE USRIN01 *
+SORT   413  05  A  FIPSCODE
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.OUTPUT.LATLONG.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.SORT.CNTY.TXT
+
+* ***************************************************************************
+* * match to geocode for county name
+* ***************************************************************************
+
+
+LABEL MATCH_COUNTY_NAME
+PROC GSP10 
+FILE DD_GSPAUX *
+HEADER                                             
+UHD1A                                               
+UHD1B --                                             
+/*
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00450 00450                                                    
+FILEDF GSPMAT1  L00200 00200                                                    
+FILEDF GSPOUT1  L00450 00450                                                    
+JOBBGN  
+* 
+MATCH1 01                     X 
+MATCH1 02                     EQ  M000 01-1                    AND
+MATCH1 02                     MV  N418 25 M006                 
+* 
+ALL    01                     AZ
+JOBEND                                                                          
+MATCHC 413 05
+MATCHM 001 05
+ZIPIN  224 C
+ZIPINM 001 C
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.CNTY.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\REPORTS\MAKE.CNTY.XLG
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.SORT.CNTY.TXT
+FILE DD_GSPMAT1 %PATH%\MELISSA_DATA\GEO_DATA\CNTY.DAT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.OUTPUT.CNTY.TXT
+
+
+* ***************************************************************************
+* * match back to append Axciom data
+* ***************************************************************************
+
+LABEL AXIOM_MATCH_BACK
+
+STEP SORT_LM SORT FOR CUSTMATCH
+FILE USRIN01 *
+SORT    378  07 A  CUST#  
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0030.PD.0365.OUTPUT.CNTY.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.IA.TXT
+
+* **************************************************************************
+* * Axciom matchback for member records:
+* * FOR QUARTERLY UPDATE: match back to Axciom file from Scott
+* * for regular update input is UPMCINDV file from previous update.
+* * this step overwrites the subscriber_ID/active_inactive flag (253(10))
+* * which is no longer needed.
+* **************************************************************************
+
+LABEL AXIOM_MATCH_INDV_SORT
+STEP SORT_LM SORT PREV_INDV_FILE
+FILE USRIN01 *
+SORT    378  07 A  CUST#  
+/*
+FILE USRIN02 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0540S.UPMCINDV.TXT
+* *FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.150602.SATORI.NCOARFMT.RL.FINAL.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.IM.TXT
+
+
+LABEL MATCH_MEMBER_AXCIOM
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L01200 12000                                                    
+FILEDF GSPMAT1  L01200 12000                                                    
+FILEDF GSPOUT1  L01200 12000                                                    
+* *FILEDF GSPOUT2  L01200 12000                                                    
+JOBBGN                                                                          
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N252 51 M252                 AND
+MATCHS 02                     MV  N451134 M451 
+* *
+NMATCH 01                     AZ
+NMATCH 02                     EQ  M000 01-0
+* *
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 378 07       
+MATCHM 378 07       
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.AXCIOM.MATCH.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.IA.TXT
+FILE DD_GSPMAT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.IM.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.OUTPUT.TXT
+
+
+LABEL COUNT_MEMBER_AXCIOM
+STEP GENCOUNT #140122 UPMC : COUNT FILE(S) INPUT TO MERGE/PURGE
+FILE USRIN01 *
+HEADER            #140122 UPMC
+CONTRL 0450
+UNIT01 0332 08 C KEYCODE
+UNIT02 0302 01 C AXIOM FLAG
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.OUTPUT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.AXCIOM.MATCH.OUTPUT.COUNTS.TXT
+
+
+* *****************************************************************************
+* * Axciom matchback for prospect records
+* * uses ADD_SEQ_TO_PROSPECT file from last quarterly update
+* *****************************************************************************
+
+* * MATCH BACK TO LAST FULL UPDATE OUTPUT FILE TO APPEND AXCIOM DATA
+LABEL MEM_MATCH_BACKS
+
+STEP SORT_LM SORT FOR CUSTMATCH
+FILE USRIN01 *
+SORT    378  07 A  CUST#  
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.OUTPUT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.PROSPECT.MATCH.IA.TXT
+
+LABEL SORT_CUSTMATCH
+STEP SORT_LM SORT FOR CUSTMATCH
+FILE USRIN01 *
+SORT    378  07 A  CUST#  
+/*
+* ******************************************
+* * make sure file is pointing to the last Axciom update!!!
+FILE USRIN02 %PATH%\150502_UPMC_JCS\OUTPUT\PD.0365.ADD_SEQ_TO_PROSPECT.txt
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.PROSPECT.MATCH.IM.TXT
+
+
+
+LABEL MATCH_PROSPECT_AXCIOM
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L02000 20000                                                    
+FILEDF GSPMAT1  L02000 20000                                                    
+FILEDF GSPOUT1  L02000 20000                                                    
+JOBBGN                                                                          
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N252 51 M252                 AND
+MATCHS 02                     MV  N451134 M451 
+* *
+NMATCH 01                     AZ
+NMATCH 02                     EQ  M000 01-0
+* *
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 378 07       
+MATCHM 378 07       
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.AXCIOM.PROSPECT.MATCH.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.PROSPECT.MATCH.IA.TXT
+FILE DD_GSPMAT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.PROSPECT.MATCH.IM.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.PROSPECT.MATCH.OUTPUT.TXT
+* *****************************************************************************
+* *****************************************************************************
+
+
+
+
+* *******************************************************************************
+* * match back to append member extract file. 
+* * this will append the entire record from the UPMC extract file
+* * to all member records
+* *******************************************************************************
+
+LABEL SORT_MEMBER_MATCH
+STEP SORT_LM SORT FOR MEMBERMATCH
+FILE USRIN01 *
+SORT    378  07 A  CUST#  
+/*
+* *FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.MATCH.OUTPUT.TXT
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.AXCIOM.PROSPECT.MATCH.OUTPUT.TXT
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.IA.TXT
+
+
+
+LABEL SORT_UPMC_MEMBER
+STEP SORT_LM SORT FOR MEMBERMATCH
+FILE USRIN01 *
+SORT    380  07 A  CUST#  
+/*
+* *FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.DROP_MATCH.txt
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_MEMBER_EXTRACT.txt
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.IM.TXT
+
+
+LABEL MATCH_UPMC_MEMBER
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPMAT1  L00600 06000                                                    
+FILEDF GSPOUT1  L02000 20000                                                    
+* *FILEDF GSPOUT2  L02000 20000                                                    
+JOBBGN                                                                          
+
+BLANKS 01                     BZ
+BLANKS 02                     EQ  N001 05-                     AND
+BLANKS 02                     EQ  N031 05-                    
+
+TEMPFX 01                     X
+TEMPFX 02                    (EQ  N410 01-A                    OR
+TEMPFX 02                     EQ  N410 02-91                   OR
+TEMPFX 02                     EQ  N410 02-92                  )AND
+TEMPFX 02                     EQ  N398 01-N                    AND
+TEMPFX 02                     MV  N398 01-V
+
+LOADAT 01                     X
+LOADAT 02                     MV  N443 08-20150602
+ 
+* * changed move card to 585 for new axciom fields
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N585528 M013                
+ 
+NMATCH 01                     AZ
+NMATCH 02                     EQ  M000 01-0
+ 
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 378 07       
+MATCHM 380 07       
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.MEMBER.MATCH.REPORT.RPT
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.IA.TXT
+FILE DD_GSPMAT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.IM.TXT
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.OUTPUT.TXT
+* *FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.BLANKS.OUTPUT.TXT
+
+* ***************************************************************************
+* * create next crosswalk file:
+* * crosswalk of new(blank) members that matched prospect
+* * prospect LSC_ID given to member
+* * this is used in the spreadsheet:
+* * MATCHS 01                     AZ
+* * number is used in the Member Crosswalk hits (Prospect ID to member) row
+* ***************************************************************************
+
+LABEL SORT_CROSSWALK_MATCH
+STEP SORT_LM SORT FOR MEMBERMATCH
+FILE USRIN01 *
+SORT    378  07 A  TEMP_ID
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.OUTPUT.TXT
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CROSSWALK.MATCH.IA.TXT
+
+
+LABEL SORT_CROSSWALK_SEQ
+STEP SORT_LM SORT FOR MEMBERMATCH
+FILE USRIN01 *
+SORT    001  07 A  TEMP_ID
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.SELECT_FUTURE_RECORDS.txt
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CROSSWALK.MATCH.IM.TXT
+
+* *************************************************************************
+* * CREATE CROSS WALK FILE. 
+* *************************************************************************
+
+LABEL CROSSWALK_MATCH
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L02000 02000                                                    
+FILEDF GSPMAT1  L00600 06000                                                    
+FILEDF GSPOUT1  L00050 00500                                                    
+JOBBGN                                                                          
+
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     NE  N352 01-                     AND
+MATCHS 02                     MV  N001 50 Y001                 AND
+MATCHS 02                     MV  N001 12 N352                 AND
+MATCHS 02                     MV  N013 01-|                    AND
+MATCHS 02                     MV  N014 11 N585                 AND
+MATCHS 02                     MV  N025 01-|                    AND
+MATCHS 02                     MV  N026 06 N332    
+
+ 
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 378 07       
+MATCHM 001 07       
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.CROSSWALK.MATCH.REPORT.RPT
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CROSSWALK.MATCH.IA.TXT
+FILE DD_GSPMAT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CROSSWALK.MATCH.IM.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CROSSWALK.MATCH.OUTPUT.TXT
+
+
+* ********************************************************************************
+* * add lsc_id to non matching future records. 
+* * This starting number must be higher than the 
+* * 'Members Last LSC Individual ID# Assigned' row in the spreadsheet !!!!!!!!!!!
+* * this will become future members new LSC_ID
+* ********************************************************************************
+
+LABEL ADD_FUTURE_SEQ_NUMBER
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L02000 20000                                                    
+FILEDF GSPOUT1  L02000 20000                                                      
+FILEDF GSPOUT2  L02000 20000 
+SEQUNA 355 9 C 999999999 005747000
+JOBBGN 
+PASS   01                     BZ
+PASS   02                     NE  N352 01-   
+
+SQNUM  01                     AZ
+SQNUM  02                     EQ  N352 01-                     AND
+SQNUM  02                     MV  N352 12-000000000000
+
+
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+/*
+FILE DD_PRNTRPT \\LIST-GROUP12008\Production\%JOBNUM%_UPMC_JCS\REPORTS\PD.0365.ADD_SEQ_TO_FUTURE_RECORDS.RPT
+FILE DD_PRNTXLG \\LIST-GROUP12008\Production\%JOBNUM%_UPMC_JCS\REPORTS\PD.0365.ADD_SEQ_TO_FUTURE_RECORDS.XLG
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.OUTPUT.TXT
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_FUTURE_RECORDS.txt
+FILE DD_GSPOUT2 %TEMP%\%FOLDER%\OUTPUT\PD.0365.PASS_CURRENT_MEMBER_RECORDS.txt
+
+* ***************************************************************************
+* * crosswalk of new(blank) members that didn't match prospect
+* * members assigned new LSC_ID number. 
+* ***************************************************************************
+
+LABEL SORT_FINAL_MEMBER_FILE
+STEP SORT_LM SORT FOR MEMBERMATCH
+FILE USRIN01 *
+SORT    352  12 A  LSC_ID
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_FUTURE_RECORDS.txt
+FILE USRIN03 %TEMP%\%FOLDER%\OUTPUT\PD.0365.PASS_CURRENT_MEMBER_RECORDS.txt
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.OUTPUT.WITH.SEQ.TXT
+
+LABEL EXTRA_CROSSWALK_MATCH
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L02000 02000                                                    
+FILEDF GSPOUT1  L00050 00500                                                    
+JOBBGN                                                                          
+
+MATCHS 01                     AZ
+MATCHS 02                     MV  N001 50 Y001                 AND
+MATCHS 02                     MV  N001 12 N352                 AND
+MATCHS 02                     MV  N013 01-|                    AND
+MATCHS 02                     MV  N014 11 N585                 AND
+MATCHS 02                     MV  N025 01-|                    AND
+MATCHS 02                     MV  N026 06 N332    
+
+ 
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 378 07       
+ZIPIN  224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.EXTRA_CROSSWALK.MATCH.REPORT.RPT
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_FUTURE_RECORDS.txt
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.EXTRA_CROSSWALK.OUTPUT.TXT
+
+* ************************************************************************
+* * SORT DEDUPE BOTH CROSSWALK FILES WITH PREVIOUS CROSSWALK OUTPUT FILE. 
+* ************************************************************************
+
+LABEL SORT_DEDUPE_CROSSWALK
+* * SORT/DEDUPE TO CREATE THE CROSSWALK FILES
+STEP SORTDUPELIM 
+FILE USRIN01 *
+SORT   001  50  A  URIN # 
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CROSSWALK.MATCH.OUTPUT.TXT
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.CROSSWALK1.FILE
+FILE USRIN04 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.EXTRA_CROSSWALK.OUTPUT.TXT
+FILE USRIN05 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.150502.CROSSWALK.OUTPUT.TXT
+* *FILE USRIN06 %PATH%\%FOLDER%\OUTPUT\PD.0365.PROSPECT.DROPPED.CROSSWALK.txt
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CROSSWALK.OUTPUT.TXT
+
+* ***************************************************************************
+* * check to drop prospect records if they have the same LSC_ID as a member
+* * there should be no matches. 
+* ***************************************************************************
+
+
+LABEL SORT_CROSSWALK_CURRENT2
+STEP SORT_LM
+FILE USRIN01 *
+SORT   352  12  A  DUPE NUMBER
+SORT   332  01  A  KEYCODE
+/*
+FILE USRIN03 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.MATCH.OUTPUT.WITH.SEQ.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.SORT.INPUT.TEST_OP_DEDUPE.TXT
+
+
+
+LABEL CROSSWALK_CURRENT
+PROC GSP10 
+FILE DD_GSPAUX *
+HEADER            #99999 UPMC
+UHD1A #99999 UPMC FILTER DUPE PROCESS                           
+UHD1B CT
+/*
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00995 09950 
+FILEDF GSPOUT1  L00995 09950 
+FILEDF GSPOUT2  L00995 00995
+JOBBGN   
+
+* 
+SLCTX  01                     AZ                  PROCESS 1ST RECORD ONLY  
+SLCTX  02                     EQ  Y001 12-                     AND
+SLCTX  02                     MV  Y001 12 N352                
+*      
+*  
+SLCTA  01                     AZ                  1ST REC OF DUPR GRP      
+SLCTA  02                     NE  N352 12 Y001                 AND
+SLCTA  02                     MV  Y001 12 N352
+*                
+*
+SLCTB  01                     BZ                 WRITE OUT <15 YR                                            
+SLCTB  02                     EQ  N352 12 Y001                 
+               
+*
+* *OUTOUT 01                     AZ
+* 
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.SORT.INPUT.TEST_OP_DEDUPE.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.TEST_OP_DEDUPE.GOOD.FILE
+FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.TEST_OP_DEDUPE.BAD.FILE
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.NEW.TEST_OP_DEDUPE.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\REPORTS\PD.0365.NEW.TEST_OP_DEDUPE.XLG
+
+* ***************************************************************************
+* * match to append congressional data:
+* * us house district codes
+* * PA state house district codes
+* * PA state senate district codes
+* ***************************************************************************
+
+LABEL CONGRESS_MATCH_SORT
+
+STEP SORT_LM
+FILE USRIN01 *
+SORT   224  09  A  ZIP         
+/*
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.TEST_OP_DEDUPE.GOOD.FILE
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.TEST_OP_DEDUPE.GOOD.SORT.ZIP.TXT
+
+LABEL CONGRESS_MATCH
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00999 09990                                                    
+FILEDF GSPMAT1  L00999 09990                                                    
+FILEDF GSPOUT1  L00999 09990                                                    
+* *FILEDF GSPOUT2  L00999 09990                                                    
+
+JOBBGN                                                                          
+* *
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N950 14 M010
+
+BAL    01                     AZ
+BAL    02                     MV  N950 14-                     
+
+* *
+* *
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 224 09       
+MATCHM 001 09       
+ZIPIN  224 C
+ZIPINM 001 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.CONGRESS.MATCH.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.NEW.TEST_OP_DEDUPE.GOOD.SORT.ZIP.TXT
+FILE DD_GSPMAT1 \\LIST-GROUP12008\Production\99999_BPDG_JCS\KnowWho\OUTPUT\KnowWho.Zip9Digit.MATCH2.OUTPUT2.SORTED.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CONGRESS.MATCH.OUTPUT.TXT
+* *FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CONGRESS.MATCH.OUTPUT.NON_MATCH.TXT
+
+* ***************************************************************************
+* * create UPMCINDV file
+* ***************************************************************************
+
+LABEL RECL_INDV
+* ****************************
+STEP RECLENGTH 
+FILE PARMS *
+RECLENGTH 963 
+/*
+FILE USRIN %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.CONGRESS.MATCH.OUTPUT.TXT
+FILE USROUT %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.TXT
+* ********************************
+
+* ***************************************************************************
+* * sort UPMCINDV file before creating UPMCHHLD file
+* * to try and make sure active members end up in UPMCHHLD file
+* ***************************************************************************
+
+LABEL SORT_FOR_HHLD_DEDUPE
+STEP SORT SORT 
+FILE USRIN01 *
+SORT   0364  08 A  HHLD_NUMBER
+SORT   0302  01 D  MATCH_FLAG
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.SORT.TXT
+
+* ***************************************************************************
+* * sort dedupe to create UPMCHHLD file
+* ***************************************************************************
+
+LABEL SORT_DEDUPE_INDV
+* * SORT/DEDUPE TO CREATE THE HOUSEHOLD FILE
+STEP SORTDUPELIM 
+FILE USRIN01 *
+SORT   364  08  A  URIN # 
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.SORT.TXT
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.UPMCHHLD.DEDUPED.TXT
+
+
+* ****************************
+LABEL RECL_HHLD
+STEP RECLENGTH 
+FILE PARMS *
+RECLENGTH 963 
+/*
+FILE USRIN %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.UPMCHHLD.DEDUPED.TXT
+FILE USROUT %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.TXT
+* ********************************
+
+* ***************************************************************************
+* * UPMCINDV output counts. 
+* ***************************************************************************
+
+LABEL COUNT_OUTPUT_INDV
+STEP GENCOUNT_LM #%JOBNUM% UPMC : MEMBER.MATCH.OUTPUT.COUNTS
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC : MEMBER.MATCH.OUTPUT.COUNTS
+CONTRL 0949
+UNIT01 0443 08 C LOAD DATE
+UNIT02 0302 01 C AXIOM FLAG
+UNIT03 0324 01 C DMA FLAG
+UNIT04 0413 05 C FIPS CODES
+UNIT05 0325 01 C DECEASED
+UNIT06 0410 02 C NIXIE
+UNIT06 0398 01 C STATUS
+UNIT07 0332 09 C KEYCODE
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0540S.UPMCINDV.COUNTS.TXT
+
+* ***************************************************************************
+* * UPMCHHLD output counts
+* ***************************************************************************
+
+
+LABEL COUNT_OUTPUT_HHLD
+STEP GENCOUNT_LM #%JOBNUM% UPMC : HOUSEHOLD COUNTS
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC : HOUSEHOLD COUNTS
+CONTRL 0949
+UNIT01 0332 09 C KEYCODE  
+UNIT02 0302 01 C MATCH_FLAG
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.UPMCHHLD.COUNTS.TXT
+
+
+* ***************************************************************************
+* * create pipe delimited outputs of UPMCINDV and UPMCHHLD
+* * requires UPMC_NEW_INDV.LAY and UPMC_NEW_HHLD.LAY
+* * files to be in main job folder. 
+* ***************************************************************************
+
+LABEL PIPE_DELIM_HHLD
+STEP FF2DELIM 
+FILE PARMS *
+LAYOUT %PATH%\%FOLDER%\UPMC_NEW_HHLD.LAY
+/*
+FILE USRIN %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.TXT
+FILE USROUT %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.PIPE.TXT
+
+LABEL PIPE_DELIM_INDV
+STEP FF2DELIM 
+FILE PARMS *
+LAYOUT %PATH%\%FOLDER%\UPMC_NEW_INDV.LAY
+/*
+FILE USRIN %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.TXT
+FILE USROUT %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.PIPE.TXT
+
+* ***************************************************************************
+* * reformat UPMCHHLD file to create house hold extract file
+* ***************************************************************************
+
+LABEL HHLD_EXTRACT_CONVERT
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L02000 02000                                                    
+FILEDF GSPOUT1  L00600 00600                                                    
+JOBBGN                                                                          
+WORK   01                     X
+WORK   02                     MV  W001999 N001                 AND
+WORK   02                     MV  N001999 Y001
+OUTPU1 01                     AZ 
+OUTPU1 02                     MV  N001 30 W001                 AND
+OUTPU1 02                     MV  N031 60 W072                 AND
+OUTPU1 02                     MV  N091 60 W132                 AND
+OUTPU1 02                     MV  N151 30 W192                 AND
+OUTPU1 02                     MV  N181 02 W222                 AND
+OUTPU1 02                     MV  N183 05 W224                 AND
+OUTPU1 02                     MV  N188 04 W229                 AND
+OUTPU1 02                     MV  N192 03 W239                 AND
+OUTPU1 02                     MV  N195 04 W242                 AND
+OUTPU1 02                     MV  N199 05 W246                 AND
+OUTPU1 02                     MV  N204 01 W280                 AND
+OUTPU1 02                     MV  N205 10 W281                 AND
+OUTPU1 02                     MV  N215 01 W291                 AND
+OUTPU1 02                     MV  N216 01 W292                 AND
+OUTPU1 02                     MV  N217 01 W293                 AND
+OUTPU1 02                     MV  N218 01 W294                 AND
+OUTPU1 02                     MV  N219 01 W295                 AND
+OUTPU1 02                     MV  N220 01 W296                 AND
+OUTPU1 02                     MV  N221 01 W297                 AND
+OUTPU1 02                     MV  N222 01 W298                 AND
+OUTPU1 02                     MV  N223 01 W299                 AND
+OUTPU1 02                     MV  N224 01 W300                 AND
+OUTPU1 02                     MV  N225 01 W301                 AND
+OUTPU1 02                     MV  N226 10 W303                 AND
+OUTPU1 02                     MV  N236 11 W313                 AND
+OUTPU1 02                     MV  N247 08 W364                 AND
+OUTPU1 02                     MV  N255 01 W398                 AND
+OUTPU1 02                     MV  N256 01 W399                 AND
+OUTPU1 02                     MV  N257 10 W400                 AND
+OUTPU1 02                     MV  N267 02 W410                 AND
+OUTPU1 02                     MV  N269 05 W413                 AND
+OUTPU1 02                     MV  N274 25 W418                 AND
+OUTPU1 02                     MV  N299 01 W453                 AND
+OUTPU1 02                     MV  N300 02 W454                 AND
+OUTPU1 02                     MV  N302 01 W456                 AND
+OUTPU1 02                     MV  N303 06 W457                 AND
+OUTPU1 02                     MV  N309 01 W463                 AND
+OUTPU1 02                     MV  N310 01 W464                 AND
+OUTPU1 02                     MV  N311 01 W467                 AND
+OUTPU1 02                     MV  N312 01 W468                 AND
+OUTPU1 02                     MV  N313 01 W469                 AND
+OUTPU1 02                     MV  N314 01 W470                 AND
+OUTPU1 02                     MV  N315 01 W471                 AND
+OUTPU1 02                     MV  N316 01 W472                 AND
+OUTPU1 02                     MV  N317 01 W473                 AND
+OUTPU1 02                     MV  N318 01 W474                 AND
+OUTPU1 02                     MV  N319 01 W475                 AND
+OUTPU1 02                     MV  N320 01 W476                 AND
+OUTPU1 02                     MV  N321 01 W477                 AND
+OUTPU1 02                     MV  N322 01 W478                 AND
+OUTPU1 02                     MV  N323 01 W479                 AND
+OUTPU1 02                     MV  N324 01 W480                 AND
+OUTPU1 02                     MV  N325 01 W481                 AND
+OUTPU1 02                     MV  N326 01 W482                 AND
+OUTPU1 02                     MV  N327 01 W483                 AND
+OUTPU1 02                     MV  N328 01 W484                 AND
+OUTPU1 02                     MV  N329 01 W485                 AND
+OUTPU1 02                     MV  N330 01 W486                 AND
+OUTPU1 02                     MV  N331 01 W487                 AND
+OUTPU1 02                     MV  N332 01 W488                 AND
+OUTPU1 02                     MV  N333 01 W489                 AND
+OUTPU1 02                     MV  N334 01 W490                 AND
+OUTPU1 02                     MV  N335 01 W491                 AND
+OUTPU1 02                     MV  N336 01 W492                 AND
+OUTPU1 02                     MV  N337 01 W493                 AND
+OUTPU1 02                     MV  N338 01 W494                 AND
+OUTPU1 02                     MV  N339 01 W495                 AND
+OUTPU1 02                     MV  N340 01 W496                 AND
+OUTPU1 02                     MV  N341 01 W497                 AND
+OUTPU1 02                     MV  N342 01 W498                 AND
+OUTPU1 02                     MV  N343 01 W499                 AND
+OUTPU1 02                     MV  N344 01 W500                 AND
+OUTPU1 02                     MV  N345 01 W501                 AND
+OUTPU1 02                     MV  N346 01 W502                 AND
+OUTPU1 02                     MV  N347 01 W503                 AND
+OUTPU1 02                     MV  N348 01 W504                 AND
+OUTPU1 02                     MV  N349 01 W505                 AND
+OUTPU1 02                     MV  N350 01 W506                 AND
+OUTPU1 02                     MV  N351 01 W507                 AND
+OUTPU1 02                     MV  N352 01 W508                 AND
+OUTPU1 02                     MV  N353 01 W509                 AND
+OUTPU1 02                     MV  N354 01 W510                 AND
+OUTPU1 02                     MV  N355 01 W511                 AND
+OUTPU1 02                     MV  N356 01 W512                 AND
+OUTPU1 02                     MV  N357 01 W513                 AND
+OUTPU1 02                     MV  N358 01 W514                 AND
+OUTPU1 02                     MV  N359 01 W515                 AND
+OUTPU1 02                     MV  N360 01 W516                 AND
+OUTPU1 02                     MV  N361 01 W517                 AND
+OUTPU1 02                     MV  N362 01 W518                 AND
+OUTPU1 02                     MV  N363 01 W519                 AND
+OUTPU1 02                     MV  N364 01 W520                 AND
+OUTPU1 02                     MV  N365 01 W521                 AND
+OUTPU1 02                     MV  N366 01 W522                 AND
+OUTPU1 02                     MV  N367 01 W523                 AND
+OUTPU1 02                     MV  N368 01 W524                 AND
+OUTPU1 02                     MV  N369 01 W525                 AND
+OUTPU1 02                     MV  N370 01 W526                 AND
+OUTPU1 02                     MV  N371 01 W527                 AND
+OUTPU1 02                     MV  N372 01 W528                 AND
+OUTPU1 02                     MV  N373 01 W529                 AND
+OUTPU1 02                     MV  N374 01 W530                 AND
+OUTPU1 02                     MV  N375 01 W531                 AND
+OUTPU1 02                     MV  N376 01 W532                 AND
+OUTPU1 02                     MV  N377 01 W533                 AND
+OUTPU1 02                     MV  N378 01 W534                 AND
+OUTPU1 02                     MV  N379 01 W535                 AND
+OUTPU1 02                     MV  N380 01 W536                 AND
+OUTPU1 02                     MV  N381 01 W537                 AND
+OUTPU1 02                     MV  N382 01 W538                 AND
+OUTPU1 02                     MV  N383 01 W539                 AND
+OUTPU1 02                     MV  N384 01 W540                 AND
+OUTPU1 02                     MV  N385 01 W541                 AND
+OUTPU1 02                     MV  N386 01 W542                 AND
+OUTPU1 02                     MV  N387 01 W543                 AND
+OUTPU1 02                     MV  N388 01 W544                 AND
+OUTPU1 02                     MV  N389 01 W545                 AND
+OUTPU1 02                     MV  N390 01 W546                 AND
+OUTPU1 02                     MV  N391 01 W547                 AND
+OUTPU1 02                     MV  N392 01 W548                 AND
+OUTPU1 02                     MV  N393 01 W549                 AND
+OUTPU1 02                     MV  N394 01 W550                 AND
+OUTPU1 02                     MV  N395 01 W551                 AND
+OUTPU1 02                     MV  N396 01 W552                 AND
+OUTPU1 02                     MV  N397 01 W553                 AND
+OUTPU1 02                     MV  N398 01 W554                 AND
+OUTPU1 02                     MV  N399 01 W555                 AND
+OUTPU1 02                     MV  N400 01 W556                 AND
+OUTPU1 02                     MV  N401 01 W557                 AND
+OUTPU1 02                     MV  N402 01 W558                 AND
+OUTPU1 02                     MV  N403 01 W559                 AND
+OUTPU1 02                     MV  N404 01 W560                 AND
+OUTPU1 02                     MV  N405 01 W561                 AND
+OUTPU1 02                     MV  N406 01 W562                 AND
+OUTPU1 02                     MV  N407 01 W563                 AND
+OUTPU1 02                     MV  N408 01 W564                 AND
+OUTPU1 02                     MV  N409 01 W565                 AND
+OUTPU1 02                     MV  N410 01 W566                 AND
+OUTPU1 02                     MV  N411 01 W567                 AND
+OUTPU1 02                     MV  N412 01 W568                 AND
+OUTPU1 02                     MV  N413 01 W569                 AND
+OUTPU1 02                     MV  N414 01 W570                 AND
+OUTPU1 02                     MV  N415 01 W571                 AND
+OUTPU1 02                     MV  N416 01 W572                 AND
+OUTPU1 02                     MV  N417 01 W573                 AND
+OUTPU1 02                     MV  N418 01 W574                 AND
+OUTPU1 02                     MV  N419 01 W575                 AND
+OUTPU1 02                     MV  N420 01 W576                 AND
+OUTPU1 02                     MV  N421 02 W577                 AND
+OUTPU1 02                     MV  N423 03 W579                 AND
+OUTPU1 02                     MV  N426 03 W582                 AND
+OUTPU1 02                     MV  N429 14 W950
+
+
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+* SEQUNA 284 7 C           000000001
+MATCHC 224 05        
+ZIPIN  224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.K%JOBNUM%.HHLD.REPORT.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\K%JOBNUM%.HHLD.REPORT.XLG
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.RFMT.TXT
+
+* ***************************************************************************
+* * reformat UPMCINDV file to create individual extract file 
+* ***************************************************************************
+
+LABEL INDV_EXTRACT_CONVERT
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L02000 02000                                                    
+FILEDF GSPOUT1  L00400 00400                                                    
+JOBBGN                                                                          
+WORK   01                     X
+WORK   02                     MV  W001600 N001                 AND
+WORK   02                     MV  N001600 Y001
+OUTPU1 01                     AZ 
+OUTPU1 02                     MV  N001 30 W001                 AND
+OUTPU1 02                     MV  N031 20 W031                 AND
+OUTPU1 02                     MV  N051 01 W051                 AND
+OUTPU1 02                     MV  N052 10 W052                 AND
+OUTPU1 02                     MV  N062 10 W062                 AND
+OUTPU1 02                     MV  N072 60 W072                 AND
+OUTPU1 02                     MV  N132 60 W132                 AND
+OUTPU1 02                     MV  N192 30 W192                 AND
+OUTPU1 02                     MV  N222 02 W222                 AND
+OUTPU1 02                     MV  N224 05 W224                 AND
+OUTPU1 02                     MV  N229 04 W229                 AND
+OUTPU1 02                     MV  N233 03 W239                 AND
+OUTPU1 02                     MV  N236 04 W242                 AND
+OUTPU1 02                     MV  N240 05 W246                 AND
+OUTPU1 02                     MV  N245 02 W273                 AND
+OUTPU1 02                     MV  N247 01 W276                 AND
+OUTPU1 02                     MV  N248 01 W279                 AND
+OUTPU1 02                     MV  N249 10 W303                 AND
+OUTPU1 02                     MV  N259 11 W313                 AND
+OUTPU1 02                     MV  N270 01 W324                 AND
+OUTPU1 02                     MV  N271 07 W325                 AND
+OUTPU1 02                     MV  N278 12 W332                 AND
+OUTPU1 02                     MV  N290 12 W352                 AND 
+OUTPU1 02                     MV  N302 08 W364                 AND
+OUTPU1 02                     MV  N310 06 W372                 AND
+OUTPU1 02                     MV  N316 01 W398                 AND
+OUTPU1 02                     MV  N317 01 W399                 AND
+OUTPU1 02                     MV  N318 10 W400                 AND
+OUTPU1 02                     MV  N328 02 W410                 AND
+OUTPU1 02                     MV  N330 05 W413                 AND
+OUTPU1 02                     MV  N335 25 W418                 AND
+OUTPU1 02                     MV  N360 08 W443                 AND
+OUTPU1 02                     MV  N368 02 W451                 AND
+OUTPU1 02                     MV  N370 11 W585                 AND
+OUTPU1 02                     MV  N381 11 W596                 
+
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+* SEQUNA 284 7 C           000000001
+MATCHC 224 05        
+ZIPIN  224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.K%JOBNUM%.INDV.REPORT.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\K%JOBNUM%.INDV.REPORT.XLG
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.RFMT.TXT
+
+
+LABEL HHLD_EXTRACT_RECL
+STEP CHNG_LRECL 
+FILE USRIN01 *
+442
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.RFMT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.RFMT.RL.TXT
+
+* ***************************************************************************
+* * create pipe delimited household extract file
+* * requires HHLD_EXTRACT.LAY file in main job folder.
+* ***************************************************************************
+
+LABEL EXTRACT_HHLD_PIPE
+STEP FF2DELIM 
+FILE PARMS *
+LAYOUT %PATH%\%FOLDER%\HHLD_EXTRACT.LAY
+/*
+FILE USRIN %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.RFMT.RL.TXT
+FILE USROUT %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCHHLD.EXTRACT.PIPE.TXT
+
+
+LABEL FINAL_OUTPUTS
+
+STEP CHNG_LRECL 
+FILE USRIN01 *
+391
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.RFMT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\output\PD.0540S.UPMCINDV.RFMT.RL.TXT
+
+* ***************************************************************************
+* * create individual extract file
+* * requires INDV_EXTRACT.LAY file in main job folder.
+* ***************************************************************************
+
+
+LABEL EXTRACT_INDV_PIPE
+STEP FF2DELIM 
+FILE PARMS *
+LAYOUT %PATH%\%FOLDER%\INDV_EXTRACT.LAY
+/*
+FILE USRIN %PATH%\%FOLDER%\output\PD.0540S.UPMCINDV.RFMT.RL.TXT
+FILE USROUT %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.EXTRACT.PIPE.TXT
+
+
+LABEL SORT_DEDUPE_INDV_TEST
+* * SORT/DEDUPE TO CREATE THE HOUSEHOLD FILE
+STEP SORTDUPELIM 
+FILE USRIN01 *
+SORT   352  12  A  URIN # 
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0540S.UPMCINDV.TXT
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.UPMCINDV.DEDUPED.test.TXT
+
+STEP GENCOUNT_LM COUNTS FOR CODE
+FILE USRIN01 *
+HEADER            #%CLNAME%
+CONTROL 0450
+UNIT01 0352 12 C KEY        
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.UPMCINDV.DEDUPED.test.TXT
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.UPMCINDV.DEDUPED.test.COUNTS.TXT
+LABEL END

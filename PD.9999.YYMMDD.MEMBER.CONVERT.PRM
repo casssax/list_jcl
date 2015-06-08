@@ -1,0 +1,650 @@
+REPLACE %PATH% \\LIST-GROUP12008\PRODUCTION
+REPLACE %JOBNUM% 150602
+REPLACE %CLNAME% UPMC
+REPLACE %FOLDER% %JOBNUM%_%CLNAME%_JCS
+REPLACE %TEMP% \\LIST-GROUP12008\TEMPDATA\PRODUCTION
+* ***************************************************
+
+DIRCREATE %PATH%\%FOLDER%\OUTPUT
+DIRCREATE %PATH%\%FOLDER%\REPORTS
+DIRCREATE %TEMP%\%FOLDER%\OUTPUT
+
+* ***************************************************************************
+* * sort decending to find highest lsc_id number - in temp folder
+* * input is lsc_newmember_extract_yymmdd.txt.indiv.output from Sergei's process
+* ***************************************************************************
+
+LABEL SORT_DECENDING_LSCID
+* * MATCH BACK TO PREVIOUS NCOA REFORMAT TO APPEND NCOA ADDRESS INFORMATION
+STEP SORT_LM SORT FOR MEMBERMATCH
+FILE USRIN01 *
+SORT    001  12 D  LSCSEQ#
+/*
+FILE USRIN02 %PATH%\%FOLDER%\lsc_newmember_extract_150603.txt.indiv.output
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.NCOA.SORT.INPUT.LSCID.TXT
+
+* ***************************************************************************
+* * sort acending for input to drop select
+* ***************************************************************************
+
+LABEL SORT_ACENDING_LSCID
+* * MATCH BACK TO PREVIOUS NCOA REFORMAT TO APPEND NCOA ADDRESS INFORMATION
+STEP SORT_LM SORT FOR MEMBERMATCH
+FILE USRIN01 *
+SORT    001  12 A  LSCSEQ#
+/*
+FILE USRIN02 %PATH%\%FOLDER%\lsc_newmember_extract_150603.txt.indiv.output
+FILE USROUT01 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.NCOA.SORT.INPUT.DROP.TXT
+
+* ***************************************************************************
+* * drop records with no Master Member ID
+* * add temp sequence number for match backs to balance
+* ***************************************************************************
+
+LABEL ADD_SEQ_TO_EXTRACT
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPOUT1  L00600 06000                                                      
+FILEDF GSPOUT2  L00600 06000                                                      
+SEQUNA 380 7 C 999999999 000000001
+JOBBGN 
+
+DROP   01                     BZ
+DROP   02                     EQ  N024 01-            
+
+
+SQNUM  01                     AZ
+
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 001 12
+MATCHM 001 12       
+ZIPIN  224 C                                                                    
+ZIPINM 224 C                                                                    
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.DROP_MATCH.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\REPORTS\PD.0365.DROP_MATCH.XLG
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.NCOA.SORT.INPUT.DROP.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_MEMBER_EXTRACT.txt
+FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.BLANK_MMI_OR_DROP.txt
+
+* ***************************************************************************
+* * select temp sequence number of records with no lsc_ID for match backs
+* ***************************************************************************
+
+LABEL SELECT_FUTURES
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPOUT1  L00009 00090                                                      
+JOBBGN 
+WORK   01                     X
+WORK   02                     MV  W001 09 N001                 AND
+WORK   02                     MV  N001 09-                     
+FUTURE 01                     AZ
+FUTURE 02                     EQ  W001 01-                     AND
+FUTURE 02                     MV  N001 09 N380
+
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.SELECT_FUTURE_RECORDS.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\REPORTS\PD.0365.SELECT_FUTURE_RECORDS.XLG
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_MEMBER_EXTRACT.txt
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.SELECT_FUTURE_RECORDS.txt
+
+* ***************************************************************************
+* * convert into LSC 450 format
+* * includes:
+* * extra lsc_id field (for post INDV merge birthdate processing)
+* * subscriber_id (first nine digits of member number)
+* * active/inactive flag (for which records get NCOA vs. CASS processing)
+* ***************************************************************************
+
+LABEL CONV_LSC_450
+* ***************************************************
+* * CONVERT 'EXPORT' FILE FROM SERGEI TO LSC450 LAYOUT
+* * - added X in col 47 of ISFULL card to keep hyphen in name. 06/01/2015
+* ***************************************************
+*-----------------------------------*
+PROC LCP10 CONVERT
+FILE DD_LCPPARM *
+FILEDF LCPNAME  L00590 
+FILEDF LCPFWD   L00452
+FILEDF LCPREJ   L00590
+FILEDF LCPLSTAT
+HEADER UPMC MEMBER          
+CONS01 X        
+CONS02 MEMBER   
+CONS03 F
+MOVE   332 09 C02 KEYCODE
+FLCODE C 332 9
+FLC002 MEMBER         LIST NAME         
+XLTALL UPPER
+* *EXTRCT 001 30 X01 10
+APOFPO A
+REJCTL 0000100 380
+SCNSPL 095 60 S01 30 S02 30                             ,
+FORMAT R W01060 S02 030  S01 030
+ISFULL W01 60 A N X                           X   X 251 01 99
+ISADDR 241 55 186 55                             NCS 
+MOVE   031 10 N02 FIRST NAME
+MOVE   051 01 N03 MIDDLE INITIAL                                   
+MOVE   001 30 N04 LAST                                             
+FORMAT I 062010 N05 010  N06 010                                   
+MOVE   132 60 A05 CARE OF ADDRESS
+MOVE   072 60 A06 STREET ADDRESS
+MOVE   192 24 296 CITY
+MOVE   222 02 326 STATE
+MOVE   224 09 328 ZIP
+MOVE   238 01 C01
+MOVE   332 06 C02
+MOVE   352 12 001 LSC_ID#
+MOVE   372 06 155 BIRTHDATE
+MOVE   378 07 380 TEMP_SEQ#
+MOVE   386 12 001 LSC_ID2
+MOVE   253 09 013 SUBSCRIBER_ID
+MOVE   262 01 361 ACTIVE_IND
+PRINT  INPUTS  0010590 C 0000010                                               X
+PRINT  OUTPUTS 0010452 C 0000010                                               X
+PRINT  REJECTS 0010590 C 0000010
+/*
+FILE DD_LCPAUX *
+/*
+FILE DD_LCPNAME %PATH%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_MEMBER_EXTRACT.txt
+FILE DD_LCPFWD %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.EXTRACT.TXT
+FILE DD_LCPREJ %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.EXTRACT.CONVERT.REJECT.TXT
+FILE DD_LCPLSTAT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.MEMBER.EXTRACT.LST
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.MEMBER.EXTRACT.RPT
+
+
+* ***************************************************************
+* * split file for NCOA or CASS processing
+* * active/inactive flag of '0' gets CASS processing
+* * all others get NCOA processing
+* *
+* * BLANK IS JUST FOR QUARTERLY UPDATE, BEFORE SENDING FILE TO SCOTT
+* * NEED TO MATCH BACK AFTER AXCIOM APPEND. !!!!!
+* * not needed for regular quarterly updates
+* *
+* * mark is for satori processing
+* ***************************************************************
+
+LABEL SPLIT_FOR_NCOA
+* * SPLIT OUTPUT OF NCOA MATCH BACK FOR SATORI PROCESSING
+PROC GSP10 #%JOBNUM% %CLNAME% : SPLIT FOR INPUT SATORI
+FILE DD_GSPAUX *
+HEADER            #%JOBNUM%_%CLNAME%                                         
+UHD1A #%JOBNUM%_%CLNAME%                                                     
+UHD1B -- SPLIT FOR INPUT SATORI
+/* 
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00450 00450 
+FILEDF GSPOUT1  L00450 00450 
+FILEDF GSPOUT2  L00450 00450 
+FILEDF GSPOUT3  L00450 00450 
+FILEDF GSPOUT4  L00450 00450 
+JOBBGN 
+* *BLANK  01                     X
+* *BLANK  02                     MV  N253 01-                   
+
+MARK   01                     X
+MARK   02                     MV  N238 01-X
+
+ACTIVE 01                     AZ
+ACTIVE 02     4900000         NE  N262 01-0
+
+ACTIV2 01                     BZ
+ACTIV2 02                     NE  N262 01-0
+
+TEMP2  01                     CZ
+TEMP2  02     4900000         EQ  N000 01-A
+
+TEMP3  01                     DZ
+TEMP3  02                     EQ  N000 01-A
+
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+* * INPUT FILE, RETURN FROM EQUIFAX
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.EXTRACT.TXT
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.ACTIVE.EXTRACT.MEMBERS1.TXT
+FILE DD_GSPOUT2 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.ACTIVE.EXTRACT.MEMBERS2.TXT
+FILE DD_GSPOUT3 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.INPUT1.TXT
+FILE DD_GSPOUT4 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.INPUT2.TXT
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.SATORI.INPUT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.INPUT.XLG
+
+* ***************************************************************************
+* * change record length on all outputs
+* ***************************************************************************
+
+STEP CHNG_LRECL #%JOBNUM% TFW : CHANGE OUTPUT RECORD LENGTH
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.INPUT1.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.INPUT1.RL.TXT
+
+
+STEP CHNG_LRECL #%JOBNUM% TFW : CHANGE OUTPUT RECORD LENGTH
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.INPUT2.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.INPUT2.RL.TXT
+
+
+STEP CHNG_LRECL #%JOBNUM% TFW : CHANGE OUTPUT RECORD LENGTH
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.ACTIVE.EXTRACT.MEMBERS1.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.ACTIVE.EXTRACT.MEMBERS1.RL.TXT
+
+STEP CHNG_LRECL #%JOBNUM% TFW : CHANGE OUTPUT RECORD LENGTH
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.ACTIVE.EXTRACT.MEMBERS2.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.ACTIVE.EXTRACT.MEMBERS2.RL.TXT
+
+SKIPTO END
+
+* ***************************************************************************
+* * outputs from Both NCOA (from inactive members) and CASS (from active members)
+* * get sorted together and run through the reformat.
+* ***************************************************************************
+
+LABEL INPUT_NCOA_REFORMAT
+STEP SORT INPUT_NCOA_REFORMAT 
+FILE USRIN01 *
+SORT   0352  12 A  Zip
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\0603-1321.txt
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\0603-1334.txt
+FILE USRIN04 %PATH%\%FOLDER%\OUTPUT\0603-1438.txt
+FILE USRIN05 %PATH%\%FOLDER%\OUTPUT\0603-1504.txt
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.INPUT_NCOA_REFORMAT.TXT
+FILE SSSTATS %PATH%\%FOLDER%\REPORTS\PD.0540S.%JOBNUM%.INPUT_NCOA_REFORMAT.SSSTATS.TXT
+
+* ***************************************************************************
+* * reformat CASS/NCOA output
+* * report from this step used for spreadsheet
+* * STATUS 02                     MV  N398 01-N (second time)
+* * -- invalid zip codes
+* * STATUS 02                     MV  N398 01-V 
+* * -- total w/verified address
+* ***************************************************************************
+
+
+LABEL REFORMAT_NCOA
+* * REFORMAT OUTPUT OF SATORI FILES AFTER NCOA
+PROC GSP10 #%JOBNUM% %CLNAME% : REFORMAT OF SATORI FILES
+FILE DD_GSPAUX *
+HEADER            #%JOBNUM%_%CLNAME%                                         
+UHD1A #%JOBNUM%_%CLNAME%                                                     
+UHD1B -- REFORMAT OF SATORI FILES
+/* 
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00479 00479 
+FILEDF GSPOUT1  L00450 00450 
+JOBBGN 
+* * BLANK OUT AXCIOM APPEND FIELDS
+FIXAXC 01                     X
+FIXAXC 02                     MV  N253 50 Y001
+* * FIX ZIPCODE (REMOVE DASH)
+FXZIP  01                     X
+FXZIP  02                     MV  W001 05 N229                 AND
+FXZIP  02                     MV  N229 05 W002                 AND
+FXZIP  02                     MV  N238 01-             
+* *--------------------------------------------------------------------
+* * STATUS UPDATE -- ASSIGN 'N' TO BAD MOVERS AND BAD ZIPS, 'V' TO ALL OTHERS
+* *    ASSIGN 'N' TO STATUS IF BAD MOVER
+STATUS 01                     X
+STATUS 02                    (EQ  N474 02-01                   OR 
+STATUS 02                     EQ  N474 02-02                   OR 
+STATUS 02                     EQ  N474 02-03                   OR 
+STATUS 02                     EQ  N474 02-05                   OR 
+STATUS 02                     EQ  N474 02-14                   OR 
+STATUS 02                     EQ  N474 02-19                  )AND
+STATUS 02                     MV  N398 01-N                    OR
+* *    ASSIGN 'N' TO STATUS IF BAD ZIP
+STATUS 02                     NE  N478 01-                     AND
+STATUS 02                     MV  N399 13-                     AND
+STATUS 02                     MV  N398 01-N                    OR
+* *    ASSIGN 'N' TO STATUS IF OLD NCOA BAD MOVER
+STATUS 02                     EQ  N464 10-                     AND
+STATUS 02                    (EQ  N410 02-01                   OR 
+STATUS 02                     EQ  N410 02-02                   OR 
+STATUS 02                     EQ  N410 02-03                   OR 
+STATUS 02                     EQ  N410 02-05                   OR 
+STATUS 02                     EQ  N410 02-14                   OR 
+STATUS 02                     EQ  N410 02-19                  )AND
+STATUS 02                     MV  N398 01-N                    OR
+* *    ASSIGN 'V' TO STATUS ON BALANCE OF RECORDS
+STATUS 02                     MV  N398 01-V
+* *------------------------------------------------------------------
+* * FIX LINE OF TRAVEL (REFORMAT)
+FXLOT  01                     X
+FXLOT  02                     MV  N246 04 N459                 AND
+FXLOT  02                     MV  N250 01 N458
+* *------------------------------------------------------------------
+* * MOVE NCOA DATA TO UPMC LAYOUT FIELDS
+NCOAS  01                     X
+* *                           ONLY DO THIS ON CURRENT NCOA MOVERS (NOT 48+ MOVERS)
+NCOAS  02                     NE  N463 11-                     AND
+NCOAS  02                    (EQ  N474 02-01                   OR
+NCOAS  02                     EQ  N474 02-02                   OR
+NCOAS  02                     EQ  N474 02-03                   OR
+NCOAS  02                     EQ  N474 02-05                   OR
+NCOAS  02                     EQ  N474 02-14                   OR
+NCOAS  02                     EQ  N474 02-19                   OR
+NCOAS  02                     EQ  N474 02-A                    OR
+NCOAS  02                     EQ  N474 02-91                   OR
+NCOAS  02                     EQ  N474 02-92                  )AND
+NCOAS  02                     MV  N399 01 N463                 AND
+NCOAS  02                     MV  N400 09 N464                 AND
+NCOAS  02                     MV  N410 02 N474                 
+* *------------------------------------------------------------------
+* * MOVE NEW DPB,CRRT TO UPMC LAYOUT FIELDS
+DPCRR  01                     X
+DPCRR  02                     MV  N239 07 N451
+* *------------------------------------------------------------------
+
+WRIT7  01                     AZ
+WRIT7  02                     EQ  N476 02-7                   
+* *------------------------------------------------------------------
+
+MOVA   01                     X
+MOVA   02                     NE  N072 01-                     AND
+MOVA   02                     NE  N132 01-                     AND
+MOVA   02                     MV  W072120 N072                 AND
+MOVA   02                     MV  N072 60 W132                 AND
+MOVA   02                     MV  N132 60 W072
+* *------------------------------------------------------------------
+
+OUTPUT 01                     AZ
+* *
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+* * INPUT FILE, RETURN FROM EQUIFAX
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.INPUT_NCOA_REFORMAT.TXT
+* *
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.TXT
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.SATORI.NCOARFMT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.XLG
+
+* ***************************************************************************
+* * FOR QUARTERLY UPDATES: output of change record length goes to Scott
+* * for Axciom append process
+* ***************************************************************************
+
+
+LABEL OUTRECL
+STEP CHNG_LRECL #%JOBNUM% 
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.RL.TXT
+
+* ***************************************************************************
+* * reformat output of above reformat to create new file for total ncoa counts. 
+* ***************************************************************************
+
+LABEL NCOA_MOVERS
+
+PROC GSP10 #%JOBNUM% %CLNAME% : REFORMAT FROM ANCHOR NCOA
+FILE DD_GSPAUX *
+HEADER            #%JOBNUM%_%CLNAME%                                         
+UHD1A #%JOBNUM%_%CLNAME%                                                     
+UHD1B -- REFORMAT FROM ANCHOR NCOA 
+/* 
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00450 00450 
+FILEDF GSPOUT1  L00460 00460 
+JOBBGN 
+DATE1  01                     X 
+DATE1  02                     EQ  N401 01-/                    AND
+DATE1  02                     MV  N451 04 N404                 AND
+DATE1  02                     MV  N455 01-0                    AND
+DATE1  02                     MV  N456 01 N400
+* *
+DATE2  01                     X 
+DATE2  02                     EQ  N402 01-/                    AND
+DATE2  02                     MV  N451 04 N405                 AND
+DATE2  02                     MV  N455 02 N400
+* * DROP BAD NIXIE CODES
+RITEI1 01                     AZ
+RITEI1 02                    (EQ  N410 02-01                   OR 
+RITEI1 02                     EQ  N410 02-02                   OR 
+RITEI1 02                     EQ  N410 02-03                   OR 
+RITEI1 02                     EQ  N410 02-05                   OR 
+RITEI1 02                     EQ  N410 02-14                   OR 
+RITEI1 02                     EQ  N410 02-19                   OR 
+RITEI1 02                     EQ  N410 02-A                    OR 
+RITEI1 02                     EQ  N410 02-91                   OR 
+RITEI1 02                     EQ  N410 02-92                  )
+* *
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+* * INPUT FILE, RETURN FROM EQUIFAX
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.TXT
+* *
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.NCOA.NCOARFMT.MOVERS.TXT
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.NCOA.NCOARFMT.MOVERS.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.NCOA.NCOARFMT.MOVERS.XLG
+
+* ***************************************************************************
+* * counts of above, used for spreadsheet
+* * use UNIT02 NIXIE to count:
+* * NCOA Movers w/New Address (Inact. Members Only)
+* * -- A,91,92
+* * NCOA Movers w/No New Address (Inact. Members Only)
+* * -- 01,02,03,05,14,19
+* ***************************************************************************
+
+LABEL MOVER_COUNTS
+
+STEP GENCOUNT_LM #%JOBNUM% UPMC : COUNT FILE(S) INPUT TO MERGE/PURGE
+
+FILE USRIN01 *
+HEADER            #%JOBNUM% CURRENT MOVERS
+CONTRL 0450
+UNIT01 0451 06 C MOVEDATE
+UNIT02 0410 02 C NIXIE
+UNIT03 0399 01 C MOVETYPE
+UNIT04 0398 01 C STATUS
+UNIT05 0410 02 C NIXIE
+UNIT05 0398 01 C STATUS
+UNIT06 0451 06 C MOVEDATE
+UNIT06 0410 02 C NIXIE
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.NCOA.NCOARFMT.MOVERS.TXT
+FILE USROUT01 %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.NCOA.NCOARFMT.MOVERS.COUNTS.TXT
+
+* ***************************************************************************
+* * FOR QUARTERLY UPDATES: input will be file back from axciom append
+* * -- PD.0365.%JOBNUM%.SATORI.NCOARFMT.RL.FINAL.TXT
+* * all other updates, input will be satori reformat output.
+* * -- PD.0365.%JOBNUM%.SATORI.NCOARFMT.RL.TXT
+* ***************************************************************************
+
+LABEL SORT_INPUT_DEAD_MC
+
+STEP CHNG_LRECL 
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.RL.TXT
+* *FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.RL.FINAL.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SORTED.OUTPUT.HYGIENE.TXT
+* ***********************************
+
+LABEL HYGIENE_KEY_COUNT
+STEP GENCOUNT #%JOBNUM% UPMC : COUNT FILE(S) INPUT TO MERGE/PURGE
+FILE USRIN01 *
+HEADER            #%JOBNUM% UPMC
+CONTRL 0450
+UNIT01 0332 08 C KEYCODE
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SORTED.OUTPUT.HYGIENE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SORTED.OUTPUT.HYGIENE.COUNTS.TXT
+
+SKIPTO DECEASED_MC
+
+* ***************************************************************************
+* * FOR QUARTERLY UPDATE ONLY: match back to pick up subscriber_ID
+* * blank out 252 for 50
+* * apply subscriber_ID + active/inactive flag in 253 for 10
+* *
+* * for regular update, skip to deceased processing
+* ***************************************************************************
+
+LABEL AFTER_AXCIOM_MATCH_BACK
+STEP SORT SORT 
+FILE USRIN01 *
+SORT   0378  07 A  Zip
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SORTED.OUTPUT.HYGIENE.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.POST_AXCIOM_IA.TXT
+
+STEP SORT SORT 
+FILE USRIN01 *
+SORT   0378  07 A  Zip
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.MEMBER.EXTRACT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.POST_AXCIOM_IM.TXT
+
+
+LABEL POST_AXCIOM_MATCH_BACK
+* ***************************************************************************************
+* * this is to add back the subscriber id for hhld merge processing. 
+* ***************************************************************************************
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00650 06500                                                    
+FILEDF GSPMAT1  L00650 06500                                                    
+FILEDF GSPOUT1  L00650 06500                                                    
+FILEDF GSPOUT2  L00650 06500                                                    
+JOBBGN                                                                          
+* *
+BLANKS 01                     X
+BLANKS 02                     MV  N252 50 W001
+
+MATCHS 01                     AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N253 10 M253
+
+NOMATC 01                     BZ
+* *
+* *
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 378 07       
+MATCHM 378 07       
+ZIPIN  224 C
+ZIPINM 224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.POST_AXCIOM_IM.REPORT.RPT
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.POST_AXCIOM_IA.TXT
+FILE DD_GSPMAT1 %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.POST_AXCIOM_IM.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.POST_AXCIOM_IM.OUTPUT.TXT
+FILE DD_GSPOUT2 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.POST_AXCIOM_IM.BALANCE.TXT
+
+
+* ***************************************************************************
+* * deceased match/flag:
+* * add match code to 451
+* * flag records that match deceased file
+* * check for latest deceased file name in production/deceased_new
+* * check deceased file to make sure first record is not blank
+* * if it is, delete blank record from deceased file.
+* * (otherwise all non match coded records will be flagged as deceased)
+* ***************************************************************************
+
+LABEL DECEASED_MC
+STEP MATCHCODE_LM    Matchcode
+FILE USRIN01 *
+FNAME     31  10  First Name
+LNAME      1  16  Last Name
+STREET    72  30  Street Name
+STATE    222   2  State Code 
+ZIP      224   5  Zip Code 
+MATCH    451 IND
+NOPARTIALS
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.POST_AXCIOM_IM.OUTPUT.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DECEASED.MTCHCD.txt
+FILE SSSTATS %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.DECEASED.MTCHCD.REPORT.txt
+
+
+LABEL DECEASED_MC_SORT
+* * DECEASED PROCESSING (PUTS A 'D' IN POS 325 IF DECEASED)
+STEP SORT_LM
+FILE USRIN01 *
+* * IF QUARTERLY UPDATE, USE BELOW FOR SORT.
+* *SORT   252  21  A  MATCH CODE
+SORT   451  21  A  MATCH CODE
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DECEASED.MTCHCD.txt
+* * IF QUARTERLY UPDATE, USE BELOW FOR INPUT.
+* * FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.NCOARFMT.RL.WITHDATA.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DECEASED.INPUT.MATCH.TXT
+
+
+LABEL DECEASED_MATCH
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00900 09000                                                    
+FILEDF GSPMAT1  L00021 02100                                                    
+FILEDF GSPOUT1  L00450 04500                                                    
+JOBBGN                                                                          
+* *
+* *
+MATCHS 01 STE                 AZ
+MATCHS 02                     EQ  M000 01-1                    AND
+MATCHS 02                     MV  N325 01-D 
+*
+NMATCH 01 STE                 AZ
+*
+JOBEND                                                           
+JOBCTL X W
+SEQERR I
+MATCHC 451 21       
+MATCHM 001 21       
+ZIPIN  224 C
+ZIPINM 001 C
+/* 
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.DECEASED.MATCH.REPORT.txt
+FILE DD_PRNTXLG %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DECEASED.MATCH.REPORT.XLG
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DECEASED.INPUT.MATCH.TXT
+FILE DD_GSPMAT1 %PATH%\DECEASED_NEW\OUTPUT\DECEASED.MAY2015.txt
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.DECEASED.OUTPUT.txt
+
+* ***************************************************************************
+* * output of deceased processing will be the input to sort for merge/purge
+* ***************************************************************************
+
+
+LABEL END
