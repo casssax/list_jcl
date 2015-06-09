@@ -1,0 +1,505 @@
+REPLACE %PATH% \\LIST-GROUP12008\PRODUCTION
+REPLACE %JOBNUM% 150502
+REPLACE %CLNAME% UPMC
+REPLACE %FOLDER% %JOBNUM%_%CLNAME%_JCS
+REPLACE %TEMP% \\LIST-GROUP12008\TEMPDATA\PRODUCTION
+
+DIRCREATE \\LIST-GROUP12008\Production\150502_UPMC_JCS
+
+*************************************************
+* THIS MATCH BACK IS FOR THE UPMC PROSPECT FILE
+* ON QUARTERLY UPDATES ONLY. 
+* WE MATCH BACK TO THE PREVIOUS PROSPECT FILE
+* TO GET LSC SEQUNECE NUBMERS
+* ***********************************************
+* STEP1 - MATCH CODE CLIENT FILE
+* STEP2 - SORT CLIENT FILE BY MATCH CODE
+* STEP3 - MATCH CLIENT TO DECEASED BY MATCH CODE
+* STEP4 - COUNT DECEASED CLIENT MATCHES
+*
+* * the 60000001 sequence number is just to make sure it is
+* * beyond the range of the member sequence numbers. 
+* ************************************************
+
+* ***************************************************************************
+* * add temp sequence number for match backs
+* * start with number higher than Member temp sequence range
+* ***************************************************************************
+
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPOUT1  L00600 06000                                                      
+SEQUNA 378 7 C 999999999 006000001
+JOBBGN 
+
+SQNUM  01                     AZ
+SQNUM  02                     MV  N378 07-0000000
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 001 12
+ZIPIN  224 C                                                                    
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.PROSP_SEQ.RPT
+FILE DD_PRNTXLG %PATH%\%FOLDER%\REPORTS\PD.0365.PROSP_SEQ.XLG
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PROSPECT.CLEAN.042315.FINAL.TXT
+FILE DD_GSPOUT1 %PATH%\%FOLDER%\OUTPUT\PD.0365.ADD_SEQ_TO_PROSPECT.txt
+
+* *******************************************************************
+* * CASS certification:
+* * this file needs to be run through satori for cass certification
+* *******************************************************************
+
+
+* *#####################################################################################
+LABEL SPLIT_FOR_NCOA
+* * SPLIT OUTPUT OF NCOA MATCH BACK FOR SATORI PROCESSING
+PROC GSP10 #%JOBNUM% %CLNAME% : SPLIT FOR INPUT SATORI
+FILE DD_GSPAUX *
+HEADER            #%JOBNUM%_%CLNAME%                                         
+UHD1A #%JOBNUM%_%CLNAME%                                                     
+UHD1B -- SPLIT FOR INPUT SATORI
+/* 
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00450 00450 
+FILEDF GSPOUT1  L00450 00450 
+FILEDF GSPOUT2  L00450 00450 
+FILEDF GSPOUT3  L00450 00450 
+JOBBGN 
+MARK   01                     X
+MARK   02                     MV  N238 01-X
+
+TEMP2  01                     AZ
+TEMP2  02     3200000         EQ  N000 01-A
+
+TEMP3  01     4900000         BZ
+TEMP3  02                     EQ  N000 01-A
+
+TEMP4  01                     CZ
+TEMP4  02                     EQ  N000 01-A
+
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+* * INPUT FILE, RETURN FROM EQUIFAX
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.PROSPECT.INPUT2.TXT
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT1.TXT
+FILE DD_GSPOUT2 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT2.TXT
+FILE DD_GSPOUT3 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT3.TXT
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.SATORIP.INPUT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT.XLG
+
+LABEL RECL_PROSP
+STEP CHNG_LRECL #%JOBNUM% TFW : CHANGE OUTPUT RECORD LENGTH
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT1.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT1.RL.TXT
+
+
+STEP CHNG_LRECL #%JOBNUM% TFW : CHANGE OUTPUT RECORD LENGTH
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT2.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT2.RL.TXT
+
+STEP CHNG_LRECL #%JOBNUM% TFW : CHANGE OUTPUT RECORD LENGTH
+FILE USRIN01 *
+450
+/*
+FILE USRIN02 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT3.TXT
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORIP.INPUT3.RL.TXT
+
+SKIPTO END
+
+* ***************************************************************************
+* * run through Satori UPMC CASS certification:
+* * Job Builder -- UPMC_CASS_CERT
+* *
+* * sort outputs of Satori process together
+* ***************************************************************************
+
+LABEL INPUT_PROSP_CASS_REFORMAT
+STEP SORT INPUT_CASS_REFORMAT 
+FILE USRIN01 *
+SORT   0352  12 A  Zip
+/*
+FILE USRIN02 %PATH%\%FOLDER%\OUTPUT\0522-1346.txt
+FILE USRIN03 %PATH%\%FOLDER%\OUTPUT\0522-1247.txt
+FILE USRIN04 %PATH%\%FOLDER%\OUTPUT\0522-1145.txt
+FILE USROUT01 %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.INPUT_PROSP_CASS_REFORMAT.TXT
+
+* ***************************************************************************
+* * reformat output of Satori
+* ***************************************************************************
+
+
+LABEL PROSP_REFORMAT_CASS
+* * REFORMAT OUTPUT OF SATORI FILES AFTER CASS
+PROC GSP10 #%JOBNUM% %CLNAME% : REFORMAT OF SATORI FILES
+FILE DD_GSPAUX *
+HEADER            #%JOBNUM%_%CLNAME%                                         
+UHD1A #%JOBNUM%_%CLNAME%                                                     
+UHD1B -- REFORMAT OF SATORI FILES
+/* 
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00479 00479 
+FILEDF GSPOUT1  L00450 00450 
+JOBBGN 
+* * BLANK OUT AXCIOM APPEND FIELDS
+FIXAXC 01                     X
+FIXAXC 02                     MV  N253 50 Y001
+* * FIX ZIPCODE (REMOVE DASH)
+FXZIP  01                     X
+FXZIP  02                     MV  W001 05 N229                 AND
+FXZIP  02                     MV  N229 05 W002                 AND
+FXZIP  02                     MV  N238 01-             
+* *--------------------------------------------------------------------
+* * STATUS UPDATE -- ASSIGN 'N' TO BAD MOVERS AND BAD ZIPS, 'V' TO ALL OTHERS
+* *    ASSIGN 'N' TO STATUS IF BAD MOVER
+STATUS 01                     X
+STATUS 02                    (EQ  N474 02-01                   OR 
+STATUS 02                     EQ  N474 02-02                   OR 
+STATUS 02                     EQ  N474 02-03                   OR 
+STATUS 02                     EQ  N474 02-05                   OR 
+STATUS 02                     EQ  N474 02-14                   OR 
+STATUS 02                     EQ  N474 02-19                  )AND
+STATUS 02                     MV  N398 01-N                    OR
+* *    ASSIGN 'N' TO STATUS IF BAD ZIP
+STATUS 02                     NE  N478 01-                     AND
+STATUS 02                     MV  N399 13-                     AND
+STATUS 02                     MV  N398 01-N                    OR
+* *    ASSIGN 'N' TO STATUS IF OLD CASS BAD MOVER
+STATUS 02                     EQ  N464 10-                     AND
+STATUS 02                    (EQ  N410 02-01                   OR 
+STATUS 02                     EQ  N410 02-02                   OR 
+STATUS 02                     EQ  N410 02-03                   OR 
+STATUS 02                     EQ  N410 02-05                   OR 
+STATUS 02                     EQ  N410 02-14                   OR 
+STATUS 02                     EQ  N410 02-19                  )AND
+STATUS 02                     MV  N398 01-N                    OR
+* *    ASSIGN 'V' TO STATUS ON BALANCE OF RECORDS
+STATUS 02                     MV  N398 01-V
+* *------------------------------------------------------------------
+* * FIX LINE OF TRAVEL (REFORMAT)
+FXLOT  01                     X
+FXLOT  02                     MV  N246 04 N459                 AND
+FXLOT  02                     MV  N250 01 N458
+* *------------------------------------------------------------------
+* * MOVE CASS DATA TO UPMC LAYOUT FIELDS
+CASSS  01                     X
+* *                           ONLY DO THIS ON CURRENT CASS MOVERS (NOT 48+ MOVERS)
+CASSS  02                     NE  N463 11-                     AND
+CASSS  02                    (EQ  N474 02-01                   OR
+CASSS  02                     EQ  N474 02-02                   OR
+CASSS  02                     EQ  N474 02-03                   OR
+CASSS  02                     EQ  N474 02-05                   OR
+CASSS  02                     EQ  N474 02-14                   OR
+CASSS  02                     EQ  N474 02-19                   OR
+CASSS  02                     EQ  N474 02-A                    OR
+CASSS  02                     EQ  N474 02-91                   OR
+CASSS  02                     EQ  N474 02-92                  )AND
+CASSS  02                     MV  N399 01 N463                 AND
+CASSS  02                     MV  N400 09 N464                 AND
+CASSS  02                     MV  N410 02 N474                 
+* *------------------------------------------------------------------
+* * MOVE NEW DPB,CRRT TO UPMC LAYOUT FIELDS
+DPCRR  01                     X
+DPCRR  02                     MV  N239 07 N451
+* *------------------------------------------------------------------
+
+WRIT7  01                     AZ
+WRIT7  02                     EQ  N476 02-7                   
+* *------------------------------------------------------------------
+
+MOVA   01                     X
+MOVA   02                     NE  N072 01-                     AND
+MOVA   02                     NE  N132 01-                     AND
+MOVA   02                     MV  W072120 N072                 AND
+MOVA   02                     MV  N072 60 W132                 AND
+MOVA   02                     MV  N132 60 W072
+* *------------------------------------------------------------------
+
+OUTPUT 01                     AZ
+* *
+JOBEND                                                                          
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+JOBCTL X W                                                                      
+SEQERR I                                                                        
+/*
+* * INPUT FILE, RETURN FROM EQUIFAX
+FILE DD_GSPINA %PATH%\%FOLDER%\OUTPUT\PD.0540S.%JOBNUM%.INPUT_PROSP_CASS_REFORMAT.TXT
+* *
+FILE DD_GSPOUT1 %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.PROSP.CASSRFMT.TXT
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.SATORI.PROSP.CASSRFMT.RPT
+FILE DD_PRNTXLG %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.PROSP.CASSRFMT.XLG
+
+
+* ***************************************************************************
+* * add 'NEWPSPCT' key to all records from Scott's Axciom process
+* ***************************************************************************
+
+SKIPTO END
+
+LABEL ADD_KEY
+* * NEW AXIOM PROSPECT FILE IS GIVEN 'NEWPSPCT' KEY FOR MERGE
+**************
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPOUT1  L00600 06000                                                    
+JOBBGN                                                                          
+* *
+MATCHS 01 STE                 AZ
+MATCHS 02                     MV  N332 09-NEWPSPCT
+*
+JOBEND                                                           
+JOBCTL X W
+SEQERR I
+MATCHC 252 21       
+ZIPIN  224 C
+/* 
+FILE DD_PRNTRPT \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.PROSPECT.MB.MERGE.SEL.REPORT.txt
+FILE DD_PRNTXLG \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.PROSPECT.MB.MERGE.SEL.REPORT.XLG
+FILE DD_GSPINA %TEMP%\%FOLDER%\OUTPUT\PD.0365.%JOBNUM%.SATORI.PROSP.CASSRFMT.TXT
+FILE DD_GSPOUT1 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.MB.MERGE.SEL.txt
+**************
+
+
+* ***************************************************************************
+* * 'NEWPSPCT' records are sorted with old propect records (from last quarterly update)
+* ***************************************************************************
+
+LABEL UPMCINMP
+* * SORT MEMBER AND PROSPECTS TOGETHER
+STEP SORT #%JOBNUM% UPMC : SORT FILE(S) FOR MERGE/PURGE
+FILE USRIN01 *
+SORT   224  05  A  ZIPCODE
+SORT   001  04  A  LASTNAME
+SORT   072  05  A  ADDRESS     
+SORT   273  02  A  AXCIOM_AGE
+/*
+FILE USRIN02 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.MB.MERGE.SEL.txt
+FILE USRIN03 \\LIST-GROUP12008\Production\150116_UPMC_JCS\output\PD.0365.PROSPECT.INPUT2.SORT.ID.TXT
+FILE USROUT01 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.SORTED.INPUT.PROSPECT.MERGE.TXT
+
+* ***************************************************************************
+* * 12/11/2014 new merge setup for quarterly prospect axciom file processing.
+* * only new axciom records are kept. old prospects matches have their lsc_id posted to pos. 352(12)
+* ***************************************************************************
+
+LABEL CM30
+PROC MPP30 #%JOBNUM% UPMC : MERGE/PURGE PROCESSING
+FILE DD_MPPCPPRM *
+* **********************
+CMPLIM NE 1 3 
+* **********************
+* * DOB COMPARE
+CMPFLD 372 06 NE U X
+* * MIDDLE INITIAL COMPARE
+CMPFLD 051 01 NE U X
+* * SUFFIX COMPARE
+CMPFLD 062 10 NE U X
+* * PREFIX COMPARE
+CMPFLD 052 10 NE U X
+* **********************
+ALGSEL INDV T
+ALGSEL ADDR M XY
+FLCODE C 332 9
+ZPCODE M 224 05
+ADDRDF L 132 60 072 60
+NAMEDF 052 10 031 20 051 01 001 30 062 10
+DUPCTL 347 348 349 351
+DUPREC     364 344 345
+CLNREC     364 344 345
+BRKLEN 6
+FILEDF MPPMAIL  L 0600
+FILEDF MPPDUPS  L 0600
+FILEDF MPPDSTAT L 0600
+FILEDF MPPSSTAT L 0600
+FILEDF MPPINA   L 0600
+FLC001 NEWPSPCT       NEWPSPCT
+FLC002 PROSPECT   X   PROSPECT
+POST01 R               352 12   1 3 PRO       352 12
+FLCOUT P X
+HEADER            #%JOBNUM% UPMC 
+UHD1A #%JOBNUM% UPMC INDV MEDIUM
+UHD1B -- MERGE/PURGE PROCESSING
+MERGES0224 050001 040072 05
+PRIORTP
+SEQERR E
+SUROPT N
+ULRECL 600
+/*
+FILE DD_PRNTRPT \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.CM30.PROSPECT.REPORT.RPT
+FILE DD_PRNTXLG \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.CM30.PROSPECT.REPORT.XLG
+FILE DD_MPPINA \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.SORTED.INPUT.PROSPECT.MERGE.TXT
+FILE DD_MPPDUPS \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.DUPE.PROSPECT.FILE.TXT
+FILE DD_MPPMAIL \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.PROSPECT.FILE.TXT
+FILE DD_MPPDSTAT \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.CM30.PROSPECT.STAT.TXT
+FILE DD_MPPSSTAT \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.STATE.PROSPECT.STAT.TXT
+
+LABEL COUNT_MAILFILE
+STEP GENCOUNT_LM #130907 TLA : COUNT FILE(S) OUTPUT OF PRISON
+FILE USRIN01 *
+HEADER            #130907 PROSTPECT AXCIOM
+CONTRL 0600
+UNIT01 0332 09 C KEYCODE
+/*
+FILE USRIN02 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.PROSPECT.FILE.TXT
+FILE USROUT01 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.PROSPECT.FILE.COUNTS.TXT
+
+LABEL TEST_SORT
+STEP SORT SORT 
+FILE USRIN01 *
+SORT   0352  12 A  Zip
+/*
+FILE USRIN02 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.PROSPECT.FILE.TXT
+FILE USROUT01 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.PROSPECT.FILE.SORT.ID.TXT
+
+* ***************************************************************************
+* * remove old records that didn't match new Axciom file
+* * add sequence number to 'NEWPSPCT' records that didn't match old
+* * change remaining 'NEWPSPCT' records key to 'PROSPECT'
+* ***************************************************************************
+
+LABEL SPLIT_OLD_NEW_SEQ
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPOUT1  L00600 06000                                                      
+FILEDF GSPOUT2  L00600 06000                                                      
+FILEDF GSPOUT3  L00600 06000                                                      
+* *SEQUNA 355 9 C 999999999 003715980
+* *SEQUNA 355 9 C 999999999 003960220
+* *SEQUNA 355 9 C 999999999 005297600
+SEQUNA 355 9 C 999999999 005449400
+JOBBGN 
+
+
+PRSPCT 01                     CZ
+PRSPCT 02                     EQ  N332 09-PROSPECT
+
+SQNUM  01                     AZ
+SQNUM  02                     EQ  N332 09-NEWPSPCT             AND
+SQNUM  02                     EQ  N352 12-                     AND
+SQNUM  02                     MV  N352 12-000000000000         AND
+SQNUM  02                     MV  N332 09-PROSPECT
+
+GOOD   01                     BZ
+GOOD   02                     MV  N332 12-PROSPECT
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+/*
+FILE DD_PRNTRPT \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.MB.NONMATCHED.SEQ.RPT
+FILE DD_PRNTXLG \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.MB.NONMATCHED.SEQ.XLG
+FILE DD_GSPINA \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.%JOBNUM%.INDV.MAIL.PROSPECT.FILE.TXT
+FILE DD_GSPOUT1 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.OP.CM30.NEWPSPCT.SEQ.txt
+FILE DD_GSPOUT2 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.OP.CM30.PROSPECT.txt
+FILE DD_GSPOUT3 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.DROPPED.PROSPECT.txt
+
+
+* ***************************************************************************
+* * sort new and old sequence numbered records together
+* ***************************************************************************
+
+LABEL SEQ_NUM_SORT
+**************
+STEP SORT_LM
+FILE USRIN01 *
+SORT   352  12  D  MATCH CODE
+/*
+FILE USRIN02 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.OP.CM30.NEWPSPCT.SEQ.txt
+FILE USRIN03 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.OP.CM30.PROSPECT.txt
+FILE USROUT01 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.999999.PROSPECT.SORT.OUTPUT.TXT
+**************
+
+* ***************************************************************************
+* * create crosswalk file of dropped prospects
+* * these are prospect records from the old prospect file that did not 
+* * match the new file. 
+* * this is sorted together with the final crosswalk file on quarterly updates
+* ***************************************************************************
+
+LABEL PROSPECT_CROSSWALK
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L02000 02000                                                    
+FILEDF GSPOUT1  L00050 00500                                                    
+JOBBGN                                                                          
+
+WORK   01                     X
+WORK   02                     MV  W001450 N001                 AND
+WORK   02                     MV  N001 50 Z001
+
+MATCHS 01                     AZ
+MATCHS 02                     MV  N001 12 N352                 AND
+MATCHS 02                     MV  N013 02-||                   AND
+MATCHS 02                     MV  N015 04-DROP    
+
+ 
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 378 07       
+ZIPIN  224 C
+/*
+FILE DD_PRNTRPT %PATH%\%FOLDER%\REPORTS\PD.0365.%JOBNUM%.DROP.PROSPECT.CROSSWALK.REPORT.RPT
+FILE DD_GSPINA \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.DROPPED.PROSPECT.txt
+FILE DD_GSPOUT1 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.PROSPECT.DROPPED.CROSSWALK.txt
+
+* ***************************************************************************
+* * create a file of the dropped prospect records.
+* * -- this step is probably not needed anymore. 
+* ***************************************************************************
+
+LABEL DROPPED_PROSPECT_OUT
+PROC GSP10 GEN SELECT
+FILE DD_GSPPARM *
+FILEDF GSPINA   L00600 06000                                                    
+FILEDF GSPOUT1  L00600 06000                                                      
+JOBBGN 
+
+
+WORK   01                     X
+WORK   02                     MV  W001450 N001                 AND
+WORK   02                     MV  N001450 W451
+
+MATCHS 01                     AZ
+MATCHS 02                     MV  N001250 W001                 AND
+MATCHS 02                     MV  N251 12 W352
+
+JOBEND                                                                          
+JOBCTL X W
+SEQERR I
+MATCHC 224 05
+ZIPIN  224 C                                                                    
+/*
+FILE DD_PRNTRPT \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.PROSPECT.DROPPED.RPT
+FILE DD_PRNTXLG \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.PROSPECT.DROPPED.XLG
+FILE DD_GSPINA \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.NEW.PROSPECT.DROPPED.PROSPECT.txt
+FILE DD_GSPOUT1 \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.DROPPED.PROSPECT.OUTPUT.txt
+
+LABEL DROPPED_PROSPECT_PIPE
+LABEL PIPE_DELIM_INDV
+STEP FF2DELIM 
+FILE PARMS *
+LAYOUT %PATH%\%FOLDER%\dropped_prospect.lay
+/*
+FILE USRIN \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.DROPPED.PROSPECT.OUTPUT.txt
+FILE USROUT \\LIST-GROUP12008\Production\150502_UPMC_JCS\OUTPUT\PD.0365.DROPPED.PROSPECT.OUTPUT.PIPE.txt
+
+LABEL END
+
